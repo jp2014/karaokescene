@@ -1,0 +1,112 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/inter';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+/* Karaoke Scene is a night-out product, so the app is dark by design. */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Inter Variable', ui-sans-serif, sans-serif;
+
+  --color-ink: #0b0814;
+  --color-night: #120d1f;
+  --color-surface: #171127;
+  --color-surface-2: #201836;
+  --color-surface-3: #2a2045;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.16);
+  --color-fg: #f6f2ff;
+  --color-muted: #a99fc4;
+  --color-faint: #6f6690;
+
+  --color-pink: #ff3d9a;
+  --color-violet: #8b5cf6;
+  --color-cyan: #22d3ee;
+  --color-gold: #ffc447;
+  --color-live: #3ee58f;
+  --color-danger: #ff5d6c;
+
+  --shadow-glow-pink: 0 0 0 1px rgb(255 61 154 / 0.35), 0 8px 32px -6px rgb(255 61 154 / 0.45);
+  --shadow-glow-cyan: 0 0 0 1px rgb(34 211 238 / 0.35), 0 8px 32px -6px rgb(34 211 238 / 0.4);
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 40px -16px rgb(0 0 0 / 0.6);
+
+  --animate-pulse-ring: pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  --animate-scan: scan 2.2s ease-in-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 3s linear infinite;
+
+  @keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  @keyframes scan {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(calc(var(--scan-h, 240px) - 4px)); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes shimmer {
+    to { background-position: 200% center; }
+  }
+}
+
+@layer base {
+  html { color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-ink text-fg font-sans antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 10% -10%, rgb(139 92 246 / 0.16), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgb(255 61 154 / 0.10), transparent 60%);
+    background-attachment: fixed;
+    min-height: 100dvh;
+  }
+  h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+  ::selection { background: rgb(255 61 154 / 0.4); }
+  :focus-visible { outline: 2px solid var(--color-cyan); outline-offset: 2px; border-radius: 6px; }
+  input, textarea, select { @apply bg-surface-2 border border-line rounded-xl px-3 py-2.5 text-fg placeholder:text-faint outline-none transition; }
+  input:focus, textarea:focus, select:focus { @apply border-violet/70 ring-2 ring-violet/25; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.1); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+}
+
+@utility text-gradient {
+  background: linear-gradient(90deg, var(--color-pink), var(--color-violet) 50%, var(--color-cyan));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility bg-brand {
+  background-image: linear-gradient(120deg, var(--color-pink), var(--color-violet) 55%, var(--color-cyan));
+}
+@utility glass {
+  background: rgb(23 17 39 / 0.72);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+}
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+@utility pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+@utility pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+
+/* MapLibre tweaks for the dark theme */
+.maplibregl-ctrl-group { background: var(--color-surface) !important; border: 1px solid var(--color-line); }
+.maplibregl-ctrl-group button + button { border-top-color: var(--color-line) !important; }
+.maplibregl-ctrl-icon { filter: invert(1) brightness(0.85); }
+.maplibregl-ctrl-attrib { background: rgb(11 8 20 / 0.6) !important; color: var(--color-faint) !important; font-size: 10px; }
+.maplibregl-ctrl-attrib a { color: var(--color-muted) !important; }
+
+/* Map markers */
+.ks-marker { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; background: none; border: 0; padding: 0; }
+.ks-pin { position: relative; display: grid; place-items: center; width: 30px; height: 30px; }
+.ks-dot { position: relative; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; background: var(--c); color: #0b0814; font-size: 13px; font-weight: 800; box-shadow: 0 0 0 3px rgb(11 8 20 / 0.85), 0 0 22px var(--c); transition: transform .2s; }
+.ks-ring { position: absolute; inset: 0; border-radius: 999px; background: var(--c); animation: pulse-ring 1.8s cubic-bezier(.2,.6,.3,1) infinite; }
+.ks-count { position: absolute; z-index: 2; top: -8px; right: -12px; min-width: 20px; padding: 1px 5px; border-radius: 99px; background: #f6f2ff; color: #0b0814; font: 700 10px/1.4 var(--font-sans); box-shadow: 0 0 0 2px #0b0814; }
+.ks-label { padding: 2px 8px; border-radius: 99px; background: rgb(11 8 20 / 0.8); border: 1px solid rgb(255 255 255 / 0.1); color: #f6f2ff; font: 600 11px/1.4 var(--font-sans); white-space: nowrap; opacity: 0; transform: translateY(-2px); transition: all .2s; pointer-events: none; }
+.ks-marker:hover .ks-label, .ks-marker.is-selected .ks-label { opacity: 1; transform: none; }
+.ks-marker:hover .ks-dot, .ks-marker.is-selected .ks-dot { transform: scale(1.25); }
+.ks-me { width: 16px; height: 16px; border-radius: 99px; background: #f6f2ff; box-shadow: 0 0 0 4px rgb(255 61 154 / 0.9), 0 0 0 14px rgb(255 61 154 / 0.18); }

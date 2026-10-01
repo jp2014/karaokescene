@@ -1,0 +1,19 @@
+{
+  "name": "@ks/api-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "hono": "^4.13.12"
+  },
+  "devDependencies": {
+    "@ks/api": "workspace:*",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}

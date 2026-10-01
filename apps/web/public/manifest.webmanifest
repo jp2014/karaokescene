@@ -1,0 +1,10 @@
+{
+  "name": "Karaoke Scene",
+  "short_name": "Karaoke Scene",
+  "description": "Find karaoke nights, your people and your rep.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0814",
+  "theme_color": "#0b0814",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
