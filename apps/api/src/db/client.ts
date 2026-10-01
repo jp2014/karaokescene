@@ -20,6 +20,6 @@ export const db = drizzle(client, { schema });
 export type DB = typeof db;
 export { schema };
 
-export async function migrateDb() {
-  await migrate(db, { migrationsFolder: resolve(apiRoot, 'drizzle') });
+export async function migrateDb(migrationsFolder = resolve(apiRoot, 'drizzle')) {
+  await migrate(db, { migrationsFolder });
 }
