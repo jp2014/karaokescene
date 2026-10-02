@@ -4,3 +4,6 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # Optional postinstall steps (version notices / defaults generation); not needed.
+  '@firebase/util': false
+  protobufjs: false

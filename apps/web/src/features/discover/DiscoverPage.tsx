@@ -1,3 +1,4 @@
+import { DEMO } from '~/lib/demo';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Disc3, List, Map as MapIcon, Radar, Radio, Sparkles, Sunset } from 'lucide-react';
@@ -103,7 +104,7 @@ export function DiscoverPage() {
       {venues.map((v) => (
         <VenueCard key={v.id} v={v} selected={v.id === selected} onHover={() => setSelected(v.id)} />
       ))}
-      {!venues.length && !isLoading && <EmptyState icon="🎤" title="No karaoke matches those filters" body="Try a different time window, or time-travel to a Friday night from Demo controls." />}
+      {!venues.length && !isLoading && <EmptyState icon="🎤" title="No karaoke matches those filters" body={DEMO ? 'Try a different time window, or time-travel to a Friday night from Demo controls.' : 'Try a different time window or a wider radius.'} />}
       {!!data?.outsideRadius && (
         <p className="px-2 pt-2 text-center text-xs text-faint">
           {plural(data.outsideRadius, 'more venue')} outside your {radiusMi}-mile radius (Karaoke Scene keeps it local)

@@ -5,6 +5,7 @@ import { clock } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
+import { realtime } from '../../lib/realtime.ts';
 import { notifications } from '../notifications/service.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
@@ -12,6 +13,9 @@ import { songLists } from '../songs/service.ts';
 import { venues } from '../venues/service.ts';
 
 const R = schema.songRequests;
+
+/** Tell the booth and every singer's "My Night" at this venue that the queue changed. */
+const queueChanged = (venueId: string) => realtime.publish(`venue:${venueId}`, 'live');
 
 async function queueFor(sessionId: string) {
   const rows = await db
@@ -83,6 +87,7 @@ export const live = {
     if (queued.length >= 2) fail(409, 'You already have 2 songs in the rotation');
     const row = { id: newId('req'), kjSessionId: session!.id, singerId: singer.id, songId, source, status: 'queued' as const, createdAt: clock.now() };
     await db.insert(R).values(row);
+    queueChanged(session!.venueId);
     await notifications.send(session!.kjId, {
       kind: 'song-request',
       title: `${singer.ghostMode ? '👻 Ghost singer' : singer.displayName} requested a song`,
@@ -93,7 +98,9 @@ export const live = {
   },
 
   async cancel(singer: User, requestId: string) {
-    await db.update(R).set({ status: 'skipped' }).where(and(eq(R.id, requestId), eq(R.singerId, singer.id)));
+    const [req] = await db.update(R).set({ status: 'skipped' }).where(and(eq(R.id, requestId), eq(R.singerId, singer.id))).returning();
+    const session = req && (await db.query.kjSessions.findFirst({ where: eq(schema.kjSessions.id, req.kjSessionId) }));
+    if (session) queueChanged(session.venueId);
   },
 
   /** KJ moves a request through the rotation. "up" pings the singer. */
@@ -107,6 +114,7 @@ export const live = {
       await notifications.send(req!.singerId, { kind: 'up-next', title: "🎤 You're up!", body: `${song?.title} — head to the stage`, link: '/live' });
     }
     await db.update(R).set({ status }).where(eq(R.id, requestId));
+    queueChanged(session!.venueId);
     return queueFor(req!.kjSessionId);
   },
 
@@ -115,6 +123,7 @@ export const live = {
     const session = (await presence.kjSessionFor(kj.id)) ?? fail(400, 'Start your show first');
     const row = { id: newId('req'), kjSessionId: session!.id, singerId, songId, source: 'list' as const, status: 'queued' as const, createdAt: clock.now() };
     await db.insert(R).values(row);
+    queueChanged(session!.venueId);
     const singer = await db.query.users.findFirst({ where: eq(schema.users.id, singerId) });
     const song = await db.query.songs.findFirst({ where: eq(schema.songs.id, songId) });
     if (singer) await notifications.send(singer.id, { kind: 'song-request', title: `${kj.displayName} added you to the rotation`, body: `${song?.title} — ${song?.artist}`, link: '/live' });

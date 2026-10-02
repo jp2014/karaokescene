@@ -1,27 +1,15 @@
-import { eq } from 'drizzle-orm';
-import { db, schema } from '../db/client.ts';
-
 /**
- * The single source of "now" for the API. The demo can time-travel (e.g. to a
- * Friday at 9pm) so karaoke nights are live whenever you happen to demo.
+ * The single source of "now" for the API. In production the offset is always 0; local demos
+ * time-travel (e.g. to a Friday at 9pm) so karaoke nights are live whenever you demo.
  */
 export const SCENE_TZ = process.env.SCENE_TZ ?? 'America/Chicago';
-const KEY = 'clockOffsetMs';
 let offsetMs = 0;
 
 export const clock = {
   now: () => Date.now() + offsetMs,
   offset: () => offsetMs,
-  async load() {
-    const row = await db.query.appSettings.findFirst({ where: eq(schema.appSettings.key, KEY) });
-    offsetMs = typeof row?.value === 'number' ? row.value : 0;
-  },
-  async setOffset(ms: number) {
+  setOffset(ms: number) {
     offsetMs = ms;
-    await db
-      .insert(schema.appSettings)
-      .values({ key: KEY, value: ms })
-      .onConflictDoUpdate({ target: schema.appSettings.key, set: { value: ms } });
   },
 };
 

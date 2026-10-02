@@ -1,40 +1,14 @@
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { Link, useSearch } from '@tanstack/react-router';
 import { motion } from 'motion/react';
-import { ArrowRight, Disc3, Mic2, Store } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { toast } from 'sonner';
-import { Avatar } from '~/components/Avatar';
-import { Button, cx } from '~/components/ui';
-import { DebugPanel } from '~/features/debug/DebugPanel';
-import { useDemoAccounts } from '~/lib/queries';
-import { homeFor, signInAs } from '~/lib/session';
-
-const PERSONAS = [
-  { id: 'usr_jess', icon: Mic2, color: 'from-pink to-violet', role: 'Singer', blurb: 'Find tonight’s best night, check in, spin Song Roulette and collect badges from KJs.' },
-  { id: 'usr_velvetvox', icon: Disc3, color: 'from-violet to-cyan', role: 'Karaoke DJ', blurb: 'Run the rotation, see who walked in (and out), award badges and auto-post your nights.' },
-  { id: 'usr_neon-mic', icon: Store, color: 'from-cyan to-live', role: 'Venue', blurb: 'Post events and drink specials, see who’s going, curate your gallery and rate your KJs.' },
-];
+import { AppleIcon, FacebookIcon, GoogleIcon } from '~/components/BrandIcons';
+import { Button } from '~/components/ui';
+import { auth, supabase, type SignInProvider } from '~/lib/auth';
+import { DemoPersonas } from '~/lib/demo';
 
 export function WelcomePage() {
-  const { data: accounts } = useDemoAccounts();
   const { next } = useSearch({ from: '/welcome' });
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [allOpen, setAllOpen] = useState(false);
-
-  async function go(userId: string) {
-    setBusy(userId);
-    try {
-      const user = await signInAs(userId, qc);
-      toast.success(`Welcome, ${user.displayName}!`);
-      if (next && next !== '/') navigate({ href: next });
-      else navigate({ to: homeFor(user.role) });
-    } finally {
-      setBusy(null);
-    }
-  }
 
   return (
     <div className="relative min-h-dvh overflow-hidden">
@@ -64,53 +38,16 @@ export function WelcomePage() {
           </motion.p>
         </section>
 
-        <section className="mt-12">
-          <h2 className="mb-4 text-sm font-semibold tracking-widest text-faint uppercase">Pick a demo persona</h2>
-          <div className="grid gap-4 md:grid-cols-3">
-            {PERSONAS.map((p, i) => {
-              const a = accounts?.find((x) => x.id === p.id);
-              return (
-                <motion.button
-                  key={p.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 + i * 0.07 }}
-                  whileHover={{ y: -4 }}
-                  onClick={() => go(p.id)}
-                  disabled={!!busy}
-                  className="group relative overflow-hidden rounded-3xl border border-line bg-surface/80 p-6 text-left shadow-card transition hover:border-line-strong"
-                >
-                  <div className={cx('absolute -top-16 -right-16 size-48 rounded-full bg-gradient-to-br opacity-25 blur-2xl transition group-hover:opacity-40', p.color)} />
-                  <div className="relative flex items-center gap-3">
-                    <div className={cx('grid size-11 place-items-center rounded-2xl bg-gradient-to-br text-white', p.color)}>
-                      <p.icon className="size-5" />
-                    </div>
-                    <div className="text-xs font-bold tracking-widest text-muted uppercase">{p.role}</div>
-                  </div>
-                  <div className="relative mt-6 flex items-center gap-3">
-                    {a ? <Avatar user={a} size="lg" /> : <div className="size-14 animate-pulse rounded-full bg-surface-2" />}
-                    <div>
-                      <div className="font-display text-xl font-bold">{a?.displayName ?? '…'}</div>
-                      <div className="text-sm text-muted">{a?.venueName ?? `@${a?.handle ?? ''}`}</div>
-                    </div>
-                  </div>
-                  <p className="relative mt-4 text-sm text-muted">{p.blurb}</p>
-                  <div className="relative mt-5 flex items-center gap-2 text-sm font-semibold text-fg">
-                    {busy === p.id ? 'Signing in…' : `Continue as ${p.role.toLowerCase()}`} <ArrowRight className="size-4 transition group-hover:translate-x-1" />
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button variant="ghost" onClick={() => setAllOpen(true)}>
-              Browse all {accounts?.length ?? ''} demo accounts
-            </Button>
-            <span className="text-xs text-faint">Google / Facebook sign-in comes later. The POC uses seeded personas.</span>
-          </div>
+        <section className="mt-12 max-w-md">
+          <SignIn next={next} />
         </section>
+
+        {DemoPersonas && (
+          <Suspense>
+            <DemoPersonas next={next} />
+          </Suspense>
+        )}
       </div>
-      <DebugPanel open={allOpen} onClose={() => setAllOpen(false)} />
     </div>
   );
 }
@@ -126,6 +63,37 @@ function FloatingNotes() {
           {n}
         </span>
       ))}
+    </div>
+  );
+}
+
+const PROVIDERS: { id: SignInProvider; label: string; icon: typeof GoogleIcon }[] = [
+  { id: 'google', label: 'Continue with Google', icon: GoogleIcon },
+  { id: 'apple', label: 'Continue with Apple', icon: AppleIcon },
+  { id: 'facebook', label: 'Continue with Facebook', icon: FacebookIcon },
+];
+
+function SignIn({ next }: { next?: string }) {
+  const [busy, setBusy] = useState<SignInProvider | null>(null);
+  if (!supabase) return null;
+  async function go(provider: SignInProvider) {
+    setBusy(provider);
+    try {
+      await auth.signIn(provider, next ?? '/');
+    } catch (e) {
+      toast.error((e as Error).message);
+      setBusy(null);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <h2 className="mb-4 text-sm font-semibold tracking-widest text-faint uppercase">Join the scene</h2>
+      {PROVIDERS.map((p) => (
+        <Button key={p.id} className="w-full" size="lg" loading={busy === p.id} disabled={!!busy} onClick={() => go(p.id)}>
+          <p.icon className="size-5" /> {p.label}
+        </Button>
+      ))}
+      <p className="text-xs text-faint">New here? Signing in creates your singer profile.</p>
     </div>
   );
 }

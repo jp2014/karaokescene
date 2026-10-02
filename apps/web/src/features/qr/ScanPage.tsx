@@ -1,16 +1,15 @@
-import { Camera, QrCode, ScanLine } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Camera, ScanLine } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Avatar, ROLE_LABEL } from '~/components/Avatar';
+import { ROLE_LABEL } from '~/components/Avatar';
 import { QrCard } from '~/components/QrCard';
-import { Button, Card, Section, Segmented } from '~/components/ui';
-import { VenueArt } from '~/components/VenueArt';
-import { useLocation } from '~/lib/location';
-import { useCircle, useMe, useVenues } from '~/lib/queries';
+import { Button, Segmented } from '~/components/ui';
+import { DemoScans } from '~/lib/demo';
+import { useMe } from '~/lib/queries';
 import { parseQr, useQrScan } from './useQrScan';
 
 declare global {
-  // Chrome/Edge/Android ship BarcodeDetector; elsewhere we fall back to simulated scans.
+  // Chrome/Edge/Android ship BarcodeDetector; elsewhere the phone's own camera app opens the QR URL.
   // eslint-disable-next-line no-var
   var BarcodeDetector: { new (o: { formats: string[] }): { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> } } | undefined;
 }
@@ -57,9 +56,6 @@ function Scanner() {
   const video = useRef<HTMLVideoElement>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const scan = useQrScan();
-  const loc = useLocation();
-  const { data: venues } = useVenues({ lat: loc.current.lat, lng: loc.current.lng, radiusMi: 20 });
-  const { data: circle } = useCircle();
   const supported = typeof window !== 'undefined' && !!window.BarcodeDetector;
 
   useEffect(() => {
@@ -84,7 +80,7 @@ function Scanner() {
           await new Promise((r) => setTimeout(r, 250));
         }
       } catch {
-        toast.error('Camera unavailable. Use a simulated scan below.');
+        toast.error('Camera unavailable. Point your phone camera at the code instead.');
         setCameraOn(false);
       }
     })();
@@ -93,9 +89,6 @@ function Scanner() {
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, [cameraOn]);
-
-  const nearby = venues?.venues.filter((v) => v.isLive).slice(0, 4) ?? [];
-  const people = [...(circle?.friends ?? []), ...(circle?.incoming ?? [])].slice(0, 4);
 
   return (
     <div className="space-y-6">
@@ -127,35 +120,11 @@ function Scanner() {
         )}
       </div>
 
-      <Section title="Simulate a scan" icon={<QrCode className="size-5 text-pink" />}>
-        <p className="-mt-1 text-sm text-muted">For the demo: pretend you just scanned one of these codes.</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {nearby.map((v) => (
-            <Card key={v.id} className="flex items-center gap-3 p-3">
-              <VenueArt name={v.name} hue={v.hue} className="size-11 rounded-xl" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{v.name}</div>
-                <div className="text-xs text-muted">Venue code → check in</div>
-              </div>
-              <Button size="sm" onClick={() => scan({ kind: 'v', key: v.slug })}>
-                Scan
-              </Button>
-            </Card>
-          ))}
-          {people.map((u) => (
-            <Card key={u.id} className="flex items-center gap-3 p-3">
-              <Avatar user={u} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{u.displayName}</div>
-                <div className="text-xs text-muted">QR card → connect</div>
-              </div>
-              <Button size="sm" onClick={() => scan({ kind: 'u', key: u.handle })}>
-                Scan
-              </Button>
-            </Card>
-          ))}
-        </div>
-      </Section>
+      {DemoScans && (
+        <Suspense>
+          <DemoScans />
+        </Suspense>
+      )}
     </div>
   );
 }

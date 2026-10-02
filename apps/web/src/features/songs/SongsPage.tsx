@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { demoUpgrade } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { Lock, Plus, Search, Sparkles, Star, Trash2 } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
@@ -20,7 +21,7 @@ export function SongsPage() {
   const add = useAction((songId: string) => unwrap(api.songs.mine[':songId'].$put({ param: { songId } })), { invalidate: inv, success: 'Added to your list 🎶' });
   const remove = useAction((songId: string) => unwrap(api.songs.mine[':songId'].$delete({ param: { songId } })), { invalidate: inv });
   const goTo = useAction((x: { songId: string; on: boolean }) => unwrap(api.songs.mine[':songId']['go-to'].$put({ param: { songId: x.songId }, json: { on: x.on } })), { invalidate: inv });
-  const upgrade = useAction(() => unwrap(api.promo.upgrade.$post()), { invalidate: [qk.me, ['recs']], success: 'Welcome to Karaoke Scene Plus ✨' });
+  const upgrade = useAction(() => demoUpgrade!(), { invalidate: [qk.me, ['recs']], success: 'Welcome to Karaoke Scene Plus ✨' });
 
   return (
     <div className="space-y-8">
@@ -122,9 +123,13 @@ export function SongsPage() {
                     <Lock className="mx-auto size-6 text-gold" />
                     <div className="mt-2 font-semibold">Smart recommendations</div>
                     <p className="mt-1 text-sm text-muted">Songs that fit your voice and crowd favorites near you.</p>
-                    <Button variant="primary" size="sm" className="mt-3" loading={upgrade.isPending} onClick={() => upgrade.mutate(undefined)}>
-                      Unlock with Plus · $2.99/mo
-                    </Button>
+                    {demoUpgrade ? (
+                      <Button variant="primary" size="sm" className="mt-3" loading={upgrade.isPending} onClick={() => upgrade.mutate(undefined)}>
+                        Unlock with Plus · $2.99/mo
+                      </Button>
+                    ) : (
+                      <Pill tone="gold" className="mt-3">Plus is coming soon</Pill>
+                    )}
                   </div>
                 </div>
               )}

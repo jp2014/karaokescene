@@ -1,3 +1,4 @@
+import { demoUpgrade } from '~/lib/demo';
 import { useQuery } from '@tanstack/react-query';
 import { Lock, Megaphone, Sparkles } from 'lucide-react';
 import { FacebookIcon as Facebook, InstagramIcon as Instagram } from '~/components/BrandIcons';
@@ -45,7 +46,7 @@ export function AutoPostCard({ venues, defaultVenueId }: { venues: { id: string;
       },
     },
   );
-  const upgrade = useAction(() => unwrap(api.promo.upgrade.$post()), { invalidate: [qk.me], success: 'Pro unlocked ✨ Auto-post everywhere.' });
+  const upgrade = useAction(() => demoUpgrade!(), { invalidate: [qk.me], success: 'Pro unlocked ✨ Auto-post everywhere.' });
 
   return (
     <Card className="p-5">
@@ -92,10 +93,10 @@ export function AutoPostCard({ venues, defaultVenueId }: { venues: { id: string;
           </Button>
         </div>
         {!pro && (
-          <button onClick={() => upgrade.mutate(undefined)} className="flex w-full items-center gap-2 rounded-2xl border border-gold/30 bg-gold/5 p-3 text-left text-xs">
+          <button disabled={!demoUpgrade} onClick={() => upgrade.mutate(undefined)} className="flex w-full items-center gap-2 rounded-2xl border border-gold/30 bg-gold/5 p-3 text-left text-xs">
             <Sparkles className="size-4 shrink-0 text-gold" />
             <span className="flex-1">
-              <b className="text-gold">Go Pro ($9/mo)</b> to auto-post to Facebook & Instagram every week.
+              {demoUpgrade ? <b className="text-gold">Go Pro ($9/mo)</b> : <b className="text-gold">Pro is coming soon:</b>} auto-post to Facebook & Instagram every week.
             </span>
           </button>
         )}

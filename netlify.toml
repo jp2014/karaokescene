@@ -1,18 +1,14 @@
+# The PWA is a static site. The API runs on Supabase (Edge Function `api`).
+# `pnpm release` builds and deploys it; git-triggered builds need the VITE_* variables
+# (VITE_API_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, optional VITE_FIREBASE_*) set in Netlify.
 [build]
-  base = ""
   command = "pnpm build"
   publish = "apps/web/dist"
 
 [build.environment]
   NODE_VERSION = "22"
 
-[functions]
-  directory = "apps/api/netlify"
-  node_bundler = "esbuild"
-  included_files = ["apps/api/drizzle/**"]
-  external_node_modules = ["@libsql/client", "libsql"]
-
-# SPA fallback (client-side routes). /api/* is claimed by the function first.
+# SPA fallback (client-side routes).
 [[redirects]]
   from = "/*"
   to = "/index.html"

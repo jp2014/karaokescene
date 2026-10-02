@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
 import { newId } from '../../lib/ids.ts';
@@ -13,7 +13,7 @@ function decadeOf(year?: number) {
 export const songCatalog = {
   async search(q: string, opts: { kjId?: string; limit?: number } = {}) {
     const term = `%${q.trim()}%`;
-    const match = q.trim() ? or(like(S.title, term), like(S.artist, term)) : undefined;
+    const match = q.trim() ? or(ilike(S.title, term), ilike(S.artist, term)) : undefined;
     const base = opts.kjId
       ? db.select({ song: S }).from(S).innerJoin(SB, and(eq(SB.songId, S.id), eq(SB.kjId, opts.kjId))).where(match)
       : db.select({ song: S }).from(S).where(match);

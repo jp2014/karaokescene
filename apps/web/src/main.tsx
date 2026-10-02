@@ -5,13 +5,14 @@ import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { Toaster } from 'sonner';
 import { routeTree } from './routeTree.gen';
 import { PageLoader } from './components/ui';
-import { ApiError, tokenStore } from './lib/api';
+import { ApiError } from './lib/api';
+import { auth } from './lib/auth';
 import './styles.css';
 
-// A token the API no longer knows (e.g. after the demo data was reset) means signed out: pick a persona again.
+// A token the API no longer accepts (expired session, or demo data was reset) means signed out.
 function onApiError(err: unknown) {
-  if (!(err instanceof ApiError) || err.status !== 401 || !tokenStore.get()) return;
-  tokenStore.clear();
+  if (!(err instanceof ApiError) || err.status !== 401 || !auth.signedIn()) return;
+  void auth.signOut();
   queryClient.clear();
   router.navigate({ to: '/welcome', search: { next: router.state.location.href } });
 }
@@ -28,6 +29,9 @@ declare module '@tanstack/react-router' {
     router: typeof router;
   }
 }
+
+await auth.init();
+if (__DEMO__) await (await import('./demo/install')).installDemo();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

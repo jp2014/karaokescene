@@ -6,6 +6,7 @@ import type { User } from '../../lib/context.ts';
 import { ARRIVE_RADIUS_MI, distanceMi, LEAVE_RADIUS_MI, type LatLng } from '../../lib/geo.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
+import { realtime } from '../../lib/realtime.ts';
 import { notifications } from '../notifications/service.ts';
 import { social } from '../social/service.ts';
 import { venues } from '../venues/service.ts';
@@ -71,6 +72,7 @@ export const presence = {
     if (current) await presence.checkOut(user, 'manual');
     const row = { id: newId('chk'), userId: user.id, venueId, method, checkedInAt: clock.now(), checkedOutAt: null, checkoutReason: null };
     await db.insert(C).values(row);
+    realtime.presenceChanged(venueId);
     const kj = await presence.activeKjSession(venueId);
     if (kj && user.role === 'singer') {
       await notifications.send(kj.kjId, {
@@ -91,6 +93,7 @@ export const presence = {
     const current = await presence.currentCheckin(user.id);
     if (!current) return null;
     await db.update(C).set({ checkedOutAt: clock.now(), checkoutReason: reason }).where(eq(C.id, current.id));
+    realtime.presenceChanged(current.venueId);
     const kj = await presence.activeKjSession(current.venueId);
     if (kj) {
       const dropped = await db
@@ -156,6 +159,7 @@ export const presence = {
     if (other) fail(409, 'Another KJ is already running this venue');
     const row = { id: newId('kjs'), kjId: kj.id, venueId, startedAt: clock.now(), endedAt: null };
     await db.insert(K).values(row);
+    realtime.presenceChanged(venueId);
     // Let fans know: everyone who favorited this KJ or this venue.
     const fans = await db
       .select({ userId: schema.favorites.userId })
@@ -174,7 +178,10 @@ export const presence = {
 
   async endKj(kj: User) {
     const s = await presence.kjSessionFor(kj.id);
-    if (s) await db.update(K).set({ endedAt: clock.now() }).where(eq(K.id, s.id));
+    if (s) {
+      await db.update(K).set({ endedAt: clock.now() }).where(eq(K.id, s.id));
+      realtime.presenceChanged(s.venueId);
+    }
     return null;
   },
 

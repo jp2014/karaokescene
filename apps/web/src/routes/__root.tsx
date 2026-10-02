@@ -1,14 +1,14 @@
 import { createRootRouteWithContext, Outlet, redirect, useRouterState } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { AppShell } from '~/features/shell/AppShell';
-import { tokenStore } from '~/lib/api';
+import { auth } from '~/lib/auth';
 
 const PUBLIC = ['/welcome', '/about'];
 const isBare = (path: string) => PUBLIC.some((p) => path.startsWith(p));
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   beforeLoad: ({ location }) => {
-    if (!tokenStore.get() && !isBare(location.pathname)) {
+    if (!auth.signedIn() && !isBare(location.pathname)) {
       throw redirect({ to: '/welcome', search: { next: location.href } });
     }
   },

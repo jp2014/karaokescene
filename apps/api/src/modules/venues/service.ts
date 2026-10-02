@@ -5,8 +5,10 @@ import { addDays, clock, localParts } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
+import { mediaStore } from '../../lib/storage.ts';
 
 const V = schema.venues;
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 export type Venue = typeof V.$inferSelect;
 
 async function owned(viewer: User, venueId: string) {
@@ -112,8 +114,19 @@ export const venues = {
     return rows.map((r) => ({ ...r, uploader: cards.get(r.uploaderId) ?? null }));
   },
 
-  async addGalleryItem(viewer: User, venueId: string, input: { caption: string; kind: 'photo' | 'video'; emoji: string }) {
-    const row = { id: newId('gal'), venueId, uploaderId: viewer.id, ...input, hue: Math.floor(Math.random() * 360), featured: false, createdAt: clock.now() };
+  /** A photo or short video from the night, stored in object storage. */
+  async addGalleryItem(viewer: User, venueId: string, input: { caption: string; file: File }) {
+    const venue = (await venues.byId(venueId)) ?? notFound('Venue');
+    const { file } = input;
+    const kind: 'photo' | 'video' = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'photo' : fail(400, 'Only photos and videos can be posted');
+    if (file.size > MAX_MEDIA_BYTES) fail(400, 'That file is too big (10 MB max)');
+    const id = newId('gal');
+    const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || (kind === 'video' ? 'mp4' : 'jpg');
+    const mediaUrl = await mediaStore().put(`gallery/${venue!.id}/${id}.${ext}`, new Uint8Array(await file.arrayBuffer()), file.type);
+    const row = {
+      id, venueId: venue!.id, uploaderId: viewer.id, kind, caption: input.caption || 'Great night!', mediaUrl,
+      hue: Math.floor(Math.random() * 360), emoji: kind === 'video' ? '🎬' : '📸', featured: false, createdAt: clock.now(),
+    };
     await db.insert(schema.galleryItems).values(row);
     return row;
   },

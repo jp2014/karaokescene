@@ -1,8 +1,14 @@
 import { defineConfig } from 'drizzle-kit';
 
+/**
+ * Migrations are written straight into supabase/migrations with Supabase-style timestamp
+ * names, so `supabase db push` applies them in production and the local PGlite database
+ * runs the same files through Drizzle's migrator (it reads ./meta/_journal.json there).
+ */
 export default defineConfig({
-  dialect: 'sqlite',
+  dialect: 'postgresql',
   schema: './src/db/schema.ts',
-  out: './drizzle',
-  dbCredentials: { url: 'file:./data/karaoke.db' },
+  out: '../../supabase/migrations',
+  schemaFilter: ['app'],
+  migrations: { prefix: 'supabase' },
 });

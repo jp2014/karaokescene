@@ -1,10 +1,11 @@
-import { asc, eq, or } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { toCard } from '../../lib/cards.ts';
 import { clock } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
-import { newToken } from '../../lib/ids.ts';
+import { newId } from '../../lib/ids.ts';
+import type { AuthIdentity } from '../../lib/auth.ts';
 import type { PrivacySettings } from '../../db/schema.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
@@ -21,29 +22,45 @@ export const DEFAULT_PRIVACY: PrivacySettings = {
   songList: 'friends',
 };
 
+const slugify = (s: string) =>
+  s
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 20);
+
 export type ProfilePatch = Partial<
   Pick<User, 'displayName' | 'bio' | 'avatarHue' | 'avatarEmoji' | 'hometown' | 'ageRange' | 'favoriteNight' | 'yearsSinging' | 'isPro' | 'ghostMode'>
 > & { privacy?: Partial<PrivacySettings> };
 
 /** Identity + profile assembly. Everything privacy-related about a person is decided here. */
 export const profiles = {
-  /** Demo sign-in: issues a bearer token for any seeded account. Real OAuth would issue the same token. */
-  async demoSignIn(userId: string) {
-    const user = (await db.query.users.findFirst({ where: eq(schema.users.id, userId) })) ?? notFound('User');
-    const token = newToken();
-    await db.insert(schema.sessions).values({ token, userId: user!.id, createdAt: clock.now() });
-    return { token, user: await profiles.me(user!) };
-  },
-
-  async demoAccounts() {
-    const rows = await db.select().from(schema.users).orderBy(asc(schema.users.role), asc(schema.users.displayName));
-    const vs = await venues.all();
-    return rows.map((u) => ({
-      ...toCard(u),
-      bio: u.bio,
-      ghostMode: u.ghostMode,
-      venueName: u.role === 'venue' ? (vs.find((v) => v.ownerId === u.id)?.name ?? null) : null,
-    }));
+  /** The profile behind a Supabase Auth user, created as a singer on first sign-in. */
+  async forAuthIdentity(identity: AuthIdentity): Promise<User> {
+    const existing = await db.query.users.findFirst({ where: eq(schema.users.authId, identity.authId) });
+    if (existing) return existing;
+    const displayName = (identity.name ?? identity.email?.split('@')[0] ?? 'New Singer').slice(0, 40);
+    const base = slugify(identity.name ?? identity.email?.split('@')[0] ?? '') || 'singer';
+    // A concurrent first request may create the row first; the handle may already be taken.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const handle = attempt === 0 ? base : `${base}${Math.floor(Math.random() * 9000) + 1000}`;
+      await db
+        .insert(schema.users)
+        .values({
+          id: newId('usr'),
+          authId: identity.authId,
+          role: 'singer',
+          handle,
+          displayName,
+          avatarHue: Math.floor(Math.random() * 360),
+          privacy: DEFAULT_PRIVACY,
+          createdAt: clock.now(),
+        })
+        .onConflictDoNothing();
+      const row = await db.query.users.findFirst({ where: eq(schema.users.authId, identity.authId) });
+      if (row) return row;
+    }
+    return fail(409, 'Could not create your profile, please try again');
   },
 
   async me(user: User) {

@@ -5,11 +5,14 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, ROLE_LABEL } from '~/components/Avatar';
 import { Button, cx, Section, Segmented, Sheet } from '~/components/ui';
-import { api, unwrap } from '~/lib/api';
-import { DAYS, dayTimeLabel, serverNow } from '~/lib/format';
-import { locationStore, OMAHA, teleport, useLocation } from '~/lib/location';
-import { useAction, useClock, useDemoAccounts, useMe, useVenues } from '~/lib/queries';
-import { homeFor, signInAs } from '~/lib/session';
+import { unwrap } from '~/lib/api';
+import { DAYS, dayTimeLabel, serverNow, setServerOffset } from '~/lib/format';
+import { locationStore, OMAHA, useLocation, type LatLng } from '~/lib/location';
+import { useAction, useMe, useVenues } from '~/lib/queries';
+import { homeFor } from '~/lib/session';
+import { demoApi, signInAs, useClock, useDemoAccounts } from './api';
+
+const teleport = (to: LatLng, label: string) => locationStore.set({ mode: 'sim', sim: to, label });
 
 const TIME_PRESETS = [
   { label: 'Fri 10:15pm', dayOfWeek: 5, minutes: 22 * 60 + 15 },
@@ -118,23 +121,26 @@ function WorldControls() {
   const [confirmReset, setConfirmReset] = useState(false);
   const venue = venues?.venues.find((v) => v.id === venueId);
 
-  const setClock = useAction((target: { dayOfWeek: number; minutes: number } | null) => unwrap(api.debug.clock.$put({ json: { target } })), {
+  const setClock = useAction((target: { dayOfWeek: number; minutes: number } | null) => unwrap(demoApi.clock.$put({ json: { target } })), {
     success: (r) => `Clock set to ${dayTimeLabel(r.now)}`,
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: (r) => {
+      setServerOffset(r.offsetMs);
+      qc.invalidateQueries();
+    },
   });
-  const crowd = useAction(() => unwrap(api.debug.crowd[':venueId'].$post({ param: { venueId }, json: { count: 8 } })), {
+  const crowd = useAction(() => unwrap(demoApi.crowd[':venueId'].$post({ param: { venueId }, json: { count: 8 } })), {
     success: (r) => `${r.added} singers just walked into ${venue?.name}`,
     onSuccess: () => qc.invalidateQueries(),
   });
-  const leave = useAction(() => unwrap(api.debug['auto-leave'][':venueId'].$post({ param: { venueId } })), {
+  const leave = useAction(() => unwrap(demoApi['auto-leave'][':venueId'].$post({ param: { venueId } })), {
     success: (r) => (r.left ? `${r.left} walked out → Auto Leave sent to the KJ` : 'Nobody is checked in there'),
     onSuccess: () => qc.invalidateQueries(),
   });
-  const referral = useAction(() => unwrap(api.debug.referral.$post()), {
+  const referral = useAction(() => unwrap(demoApi.referral.$post()), {
     success: (r) => `@${r.handle} joined via your QR code (${r.scans} total)`,
     onSuccess: () => qc.invalidateQueries(),
   });
-  const reset = useAction(() => unwrap(api.debug.reset.$post()), {
+  const reset = useAction(() => unwrap(demoApi.reset.$post()), {
     success: 'Demo data reset',
     onSuccess: () => {
       teleport(OMAHA, 'Downtown Omaha');

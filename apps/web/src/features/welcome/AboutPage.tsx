@@ -1,3 +1,4 @@
+import { DEMO } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { Award, Bell, CalendarHeart, Check, Disc3, DoorOpen, Map, Megaphone, Mic2, QrCode, Star, Store, Users } from 'lucide-react';
@@ -50,7 +51,7 @@ export function AboutPage() {
             </span>
           </Link>
           <Link to="/welcome">
-            <Button variant="primary">Try the demo</Button>
+            <Button variant="primary">{DEMO ? 'Try the demo' : 'Get started'}</Button>
           </Link>
         </header>
 
@@ -150,11 +151,11 @@ export function AboutPage() {
         </section>
 
         <section className="my-24 text-center">
-          <h2 className="text-4xl font-extrabold">Ready to see it?</h2>
-          <p className="mt-3 text-muted">Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.</p>
+          <h2 className="text-4xl font-extrabold">{DEMO ? 'Ready to see it?' : 'Ready to join?'}</h2>
+          <p className="mt-3 text-muted">{DEMO ? 'Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.' : 'Sign in with Google, Apple or Facebook and find tonight’s karaoke.'}</p>
           <Link to="/welcome">
             <Button variant="primary" size="lg" className="mt-6">
-              Open the demo
+              {DEMO ? 'Open the demo' : 'Get started'}
             </Button>
           </Link>
         </section>
