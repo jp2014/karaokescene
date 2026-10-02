@@ -1,7 +1,8 @@
 import { is } from 'drizzle-orm';
-import { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { PgTable } from 'drizzle-orm/pg-core';
 import { db, schema } from '../db/client.ts';
 import { clock, localParts, localTimeToMs } from '../lib/clock.ts';
+import { demoClock } from './clock.ts';
 import { DEFAULT_CENTER } from '../lib/geo.ts';
 import { newId } from '../lib/ids.ts';
 import { BADGES } from '../modules/reputation/badges.ts';
@@ -10,7 +11,7 @@ import { liveNight } from '../modules/venues/schedule.ts';
 import type { PrivacySettings, Visibility } from '../db/schema.ts';
 import {
   AGE_RANGES, BIOS, GALLERY_CAPTIONS, HOMETOWNS, KJS, NIGHTS, NIGHTS_OF_WEEK, PRAISE_LINES, SINGER_NAMES, EXTRA_SINGERS, SONGS, SPECIALS, VENUES,
-} from './data.ts';
+} from './seed-data.ts';
 
 /** Deterministic PRNG so every reset produces the same scene. */
 function rng(seed: number) {
@@ -39,7 +40,7 @@ export async function setDemoClock() {
   const real = Date.now();
   const { dayOfWeek } = localParts(real);
   const target = localTimeToMs(real, (5 - dayOfWeek + 7) % 7, 22 * 60 + 15);
-  await clock.setOffset(target - real);
+  await demoClock.setOffset(target - real);
 }
 
 export async function seed() {
@@ -48,9 +49,9 @@ export async function seed() {
   const sample = <T>(arr: readonly T[], n: number) => [...arr].sort(() => r() - 0.5).slice(0, n);
   const jitter = (spread: number) => (r() - 0.5) * spread;
 
-  // Wipe everything (order doesn't matter in SQLite without FKs).
+  // Wipe everything (no foreign keys, so order doesn't matter).
   for (const table of Object.values(schema)) {
-    if (is(table, SQLiteTable)) await db.delete(table);
+    if (is(table, PgTable)) await db.delete(table);
   }
 
   await setDemoClock();

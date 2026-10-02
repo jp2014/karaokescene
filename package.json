@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.21.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @ks/api --filter @ks/web dev",
     "build": "pnpm --filter @ks/web build",
-    "start": "pnpm build && pnpm --filter @ks/api start",
+    "start": "pnpm --filter @ks/web build:demo && pnpm --filter @ks/api start",
+    "release": "node scripts/release.mjs",
     "typecheck": "pnpm -r typecheck",
     "db:reset": "pnpm --filter @ks/api db:reset",
     "db:generate": "pnpm --filter @ks/api db:generate"

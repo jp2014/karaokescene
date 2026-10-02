@@ -19,10 +19,6 @@ const patch = z.object({
   privacy: z.object({ hometown: vis, ageRange: vis, favoriteNight: vis, yearsSinging: vis, proStatus: vis, songList: vis }).partial(),
 }).partial();
 
-export const authRoutes = new Hono<AppEnv>()
-  .get('/demo-accounts', async (c) => c.json(await profiles.demoAccounts()))
-  .post('/demo-sign-in', zValidator('json', z.object({ userId: z.string() })), async (c) => c.json(await profiles.demoSignIn(c.req.valid('json').userId)));
-
 export const profileRoutes = new Hono<AppEnv>()
   .get('/me', async (c) => c.json(await profiles.me(requireViewer(c))))
   .patch('/me', zValidator('json', patch), async (c) => c.json(await profiles.update(requireViewer(c), c.req.valid('json'))))

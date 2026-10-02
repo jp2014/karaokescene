@@ -1,7 +1,10 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
+import { defer } from '../../lib/defer.ts';
 import { newId } from '../../lib/ids.ts';
+import { push } from '../../lib/push.ts';
+import { realtime } from '../../lib/realtime.ts';
 
 export type NotificationKind =
   | 'auto-leave'
@@ -16,16 +19,12 @@ export type NotificationKind =
   | 'qr-scan';
 
 export const notifications = {
+  /** Store it for the in-app list, nudge any open app over Realtime, and push to their devices. */
   async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }) {
-    await db.insert(schema.notifications).values({
-      id: newId('ntf'),
-      userId,
-      kind: n.kind,
-      title: n.title,
-      body: n.body ?? '',
-      link: n.link,
-      createdAt: clock.now(),
-    });
+    const row = { id: newId('ntf'), userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: clock.now() };
+    await db.insert(schema.notifications).values(row);
+    realtime.publish(`user:${userId}`, 'notification', { id: row.id, kind: row.kind });
+    defer('push', () => push.send(userId, row));
   },
 
   async list(userId: string) {

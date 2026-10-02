@@ -1,6 +1,6 @@
 import { Link, useParams, useRouter } from '@tanstack/react-router';
 import { ArrowLeft, CalendarDays, Camera, Check, Heart, LogOut, MapPin, Martini, QrCode, Settings2, Share2, Star, Trophy, Users } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Avatar, AvatarStack } from '~/components/Avatar';
 import { BadgeMedal } from '~/components/Badge';
 import { BusyMeter } from '~/components/BusyMeter';
@@ -11,6 +11,7 @@ import { GalleryTile, VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
 import { ago, DAYS, dateLabel, duration, hoursLabel, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
+import { useLiveQueries } from '~/lib/realtime';
 import { PeakHours } from './PeakHours';
 
 const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scene: 'cyan' } as const;
@@ -18,6 +19,7 @@ const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scen
 export function VenuePage() {
   const { slug } = useParams({ from: '/venues/$slug' });
   const { data: d, isLoading } = useVenue(slug);
+  useLiveQueries(d ? `venue:${d.venue.id}` : null, [qk.venue(slug)]);
   const { data: me } = useMe();
   const router = useRouter();
   const [share, setShare] = useState(false);
@@ -316,19 +318,20 @@ function Events({ d }: { d: VenueDetail }) {
   );
 }
 
-const EMOJIS = ['📸', '🎤', '🪩', '🎉', '💃', '🎸', '🍻', '🌈'];
-
 function Gallery({ d }: { d: VenueDetail }) {
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState('');
-  const [emoji, setEmoji] = useState('📸');
-  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, json: { caption: caption || 'Great night!', kind: 'photo', emoji } })), {
+  const [file, setFile] = useState<File | null>(null);
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
+  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, form: { caption, file: file! } })), {
     invalidate: [qk.venue(d.venue.slug)],
     success: 'Posted to the gallery',
     onSuccess: () => {
       setOpen(false);
       setCaption('');
+      setFile(null);
     },
   });
   return (
@@ -351,21 +354,21 @@ function Gallery({ d }: { d: VenueDetail }) {
       <p className="text-xs text-faint">Curated by {d.venue.name}. Featured shots float to the top. Last upload {d.gallery[0] ? ago(d.gallery[0].createdAt) : 'n/a'}.</p>
       <Sheet open={open} onClose={() => setOpen(false)} title="Add to the gallery">
         <div className="space-y-4">
-          <div className="grid aspect-video place-items-center rounded-2xl border border-dashed border-line-strong bg-surface-2/50 text-center text-sm text-muted">
-            <div>
-              <div className="text-5xl">{emoji}</div>
-              <div className="mt-2">Photo upload is mocked in the POC</div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {EMOJIS.map((e) => (
-              <button key={e} onClick={() => setEmoji(e)} className={cx('grid size-10 place-items-center rounded-xl text-xl', emoji === e ? 'bg-pink/20 ring-2 ring-pink' : 'bg-surface-2')}>
-                {e}
-              </button>
-            ))}
-          </div>
+          <label className="relative grid aspect-video cursor-pointer place-items-center overflow-hidden rounded-2xl border border-dashed border-line-strong bg-surface-2/50 text-center text-sm text-muted">
+            {preview && file?.type.startsWith('video/') ? (
+              <video src={preview} className="absolute inset-0 size-full object-cover" muted playsInline autoPlay loop />
+            ) : preview ? (
+              <img src={preview} alt="" className="absolute inset-0 size-full object-cover" />
+            ) : (
+              <div>
+                <Camera className="mx-auto size-8" />
+                <div className="mt-2">Choose a photo or short video (10 MB max)</div>
+              </div>
+            )}
+            <input type="file" accept="image/*,video/*" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </label>
           <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Caption (e.g. Bohemian Rhapsody group sing)" className="w-full" />
-          <Button variant="primary" className="w-full" loading={add.isPending} onClick={() => add.mutate(undefined)}>
+          <Button variant="primary" className="w-full" disabled={!file} loading={add.isPending} onClick={() => add.mutate(undefined)}>
             Post
           </Button>
         </div>

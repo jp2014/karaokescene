@@ -1,0 +1,8 @@
+# Supabase CLI config. Only what this project needs; see `pnpm release`.
+project_id = "karaokescene"
+
+[functions.api]
+# Bundled from apps/api by `pnpm --filter @ks/api build:edge` (git-ignored output).
+entrypoint = "./functions/api/index.js"
+# The API verifies Supabase tokens itself and serves some routes to signed-out visitors.
+verify_jwt = false

@@ -8,8 +8,9 @@ import { newId } from '../../lib/ids.ts';
 export type Network = 'facebook' | 'instagram' | 'karaokescene';
 
 /**
- * Auto-Posting (a paid KJ/venue tool). Posting to Facebook/Instagram is mocked:
- * posts are stored and marked "posted" once their time passes.
+ * Auto-Posting (a paid KJ/venue tool). Posts are stored and marked "posted" once their
+ * time passes (a scheduled job does this too). Delivery to Facebook/Instagram is not
+ * built yet; the social networks need Pro, and paid upgrades only exist in the local demo.
  */
 export const promo = {
   async list(user: User) {
@@ -23,11 +24,5 @@ export const promo = {
     const row = { id: newId('pst'), authorId: user.id, venueId: input.venueId ?? null, networks: input.networks, body: input.body, scheduledFor: input.scheduledFor, status: 'scheduled' as const, createdAt: clock.now() };
     await db.insert(schema.promoPosts).values(row);
     return row;
-  },
-
-  /** Mock checkout for the upsell flows (KJ Pro, singer premium recommendations). */
-  async upgrade(user: User) {
-    await db.update(schema.users).set({ isPremium: true }).where(eq(schema.users.id, user.id));
-    return { isPremium: true };
   },
 };

@@ -1,3 +1,4 @@
+import { DEMO, demoSetPremiere } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { Award, CalendarPlus, Crown, ExternalLink, Martini, Star, Trash2, Trophy } from 'lucide-react';
 import { useState } from 'react';
@@ -16,7 +17,7 @@ import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries'
 export function VenueHqPage() {
   const { data: me } = useMe();
   const { data: d } = useVenue(me?.venue?.slug ?? '');
-  if (!me?.venue) return <EmptyState icon="🏠" title="No venue linked" body="Switch to a venue account from Demo controls." />;
+  if (!me?.venue) return <EmptyState icon="🏠" title="No venue linked" body={DEMO ? 'Switch to a venue account from Demo controls.' : 'This account isn’t linked to a venue yet. Contact us to claim your venue.'} />;
   if (!d) return <PageLoader />;
   return <Hq d={d} />;
 }
@@ -25,7 +26,7 @@ function Hq({ d }: { d: VenueDetail }) {
   const v = d.venue;
   const [awardTo, setAwardTo] = useState<{ id: string; displayName: string; handle: string } | null>(null);
   const inv = [qk.venue(v.slug), ['venues'], qk.events];
-  const premiere = useAction((isPremiere: boolean) => unwrap(api.venues[':venueId'].$patch({ param: { venueId: v.id }, json: { isPremiere } })), {
+  const premiere = useAction((isPremiere: boolean) => demoSetPremiere!(v.id, isPremiere), {
     invalidate: inv,
     success: (_, on) => (on ? 'You are now a Premiere Partner ⭐ Priority listing is on.' : 'Premiere Partner turned off'),
   });
@@ -65,9 +66,9 @@ function Hq({ d }: { d: VenueDetail }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="font-semibold">Premiere Partner</div>
-            <div className="text-sm text-muted">Priority placement on the map and in lists, a gold star on your pin, and featured events. $49/mo (mocked).</div>
+            <div className="text-sm text-muted">Priority placement on the map and in lists, a gold star on your pin, and featured events. $49/mo.</div>
           </div>
-          <Toggle on={v.isPremiere} onChange={(on) => premiere.mutate(on)} label="Premiere Partner" />
+          {demoSetPremiere ? <Toggle on={v.isPremiere} onChange={(on) => premiere.mutate(on)} label="Premiere Partner" /> : !v.isPremiere && <Pill tone="gold">Coming soon</Pill>}
         </div>
       </Card>
 

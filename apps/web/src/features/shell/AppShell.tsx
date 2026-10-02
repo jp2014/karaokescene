@@ -2,16 +2,16 @@ import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-route
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { Bell, Compass, Disc3, Home, ListMusic, LogOut, MessageCircleHeart, Mic2, QrCode, Store, User, Users, Wrench } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Suspense, useState, type ReactNode } from 'react';
 import { Avatar, ROLE_LABEL } from '~/components/Avatar';
-import { cx, LiveDot, PageLoader } from '~/components/ui';
-import { DebugPanel } from '~/features/debug/DebugPanel';
+import { cx, LiveDot } from '~/components/ui';
+import { DemoControls } from '~/lib/demo';
 import { NotificationsSheet } from './NotificationsSheet';
 import { usePresenceHeartbeat } from './usePresence';
 import { useNotificationToasts } from './useNotificationToasts';
+import { useRealtimeSync } from './useRealtimeSync';
 import { signOut } from '~/lib/session';
-import { useClock, useMe, useNotifications, type Me } from '~/lib/queries';
-import { setServerOffset } from '~/lib/format';
+import { useMe, useNotifications, type Me } from '~/lib/queries';
 
 type NavItem = { to: string; label: string; icon: typeof Home; live?: boolean };
 
@@ -43,9 +43,8 @@ export function AppShell() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: clock } = useClock();
-  if (clock) setServerOffset(clock.offsetMs);
   usePresenceHeartbeat(me);
+  useRealtimeSync(me);
   useNotificationToasts();
 
   const nav = me ? navFor(me) : [];
@@ -75,9 +74,11 @@ export function AppShell() {
           </button>
         </nav>
         <div className="mt-auto space-y-3">
-          <button onClick={() => setDebugOpen(true)} className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gold/40 bg-gold/5 px-3.5 py-2.5 text-sm font-semibold text-gold transition hover:bg-gold/10">
-            <Wrench className="size-4" /> Demo controls
-          </button>
+          {DemoControls && (
+            <button onClick={() => setDebugOpen(true)} className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gold/40 bg-gold/5 px-3.5 py-2.5 text-sm font-semibold text-gold transition hover:bg-gold/10">
+              <Wrench className="size-4" /> Demo controls
+            </button>
+          )}
           {me && (
             <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface/70 p-3">
               <Link to="/me">
@@ -89,8 +90,8 @@ export function AppShell() {
               </div>
               <button
                 title="Sign out"
-                onClick={() => {
-                  signOut(qc);
+                onClick={async () => {
+                  await signOut(qc);
                   navigate({ to: '/welcome' });
                 }}
                 className="text-faint hover:text-fg"
@@ -106,9 +107,11 @@ export function AppShell() {
       <header className={cx('sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 pt-safe lg:hidden', fullBleed ? 'glass border-b border-line' : 'glass border-b border-line')}>
         <Logo />
         <div className="flex items-center gap-1">
-          <IconBtn onClick={() => setDebugOpen(true)} label="Demo controls">
-            <Wrench className="size-5 text-gold" />
-          </IconBtn>
+          {DemoControls && (
+            <IconBtn onClick={() => setDebugOpen(true)} label="Demo controls">
+              <Wrench className="size-5 text-gold" />
+            </IconBtn>
+          )}
           <IconBtn onClick={() => setNotesOpen(true)} label="Notifications">
             <Bell className="size-5" />
             {unread > 0 && <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-pink px-1 text-[10px] font-bold text-white">{unread}</span>}
@@ -126,7 +129,7 @@ export function AppShell() {
       <main className={cx(fullBleed ? '' : 'mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10', 'pb-28 lg:pb-10')}>
         <AnimatePresence mode="wait">
           <motion.div key={path.split('/')[1]} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-            {clock ? <Outlet /> : <PageLoader />}
+            <Outlet />
           </motion.div>
         </AnimatePresence>
       </main>
@@ -135,7 +138,11 @@ export function AppShell() {
       {me && <BottomTabs me={me} isActive={isActive} />}
 
       <NotificationsSheet open={notesOpen} onClose={() => setNotesOpen(false)} />
-      <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
+      {DemoControls && debugOpen && (
+        <Suspense>
+          <DemoControls open onClose={() => setDebugOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

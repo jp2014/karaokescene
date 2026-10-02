@@ -30,14 +30,14 @@ export const venueRoutes = new Hono<AppEnv>()
     await venues.setRsvp(requireViewer(c).id, c.req.param('venueId'), date, going);
     return c.json({ ok: true });
   })
-  .post('/:venueId/gallery', zValidator('json', z.object({ caption: z.string().max(120), kind: z.enum(['photo', 'video']), emoji: z.string().max(8) })), async (c) =>
-    c.json(await venues.addGalleryItem(requireViewer(c), c.req.param('venueId'), c.req.valid('json'))),
+  .post('/:venueId/gallery', zValidator('form', z.object({ caption: z.string().max(120).default(''), file: z.instanceof(File) })), async (c) =>
+    c.json(await venues.addGalleryItem(requireViewer(c), c.req.param('venueId'), c.req.valid('form'))),
   )
   .put('/gallery/:itemId/featured', zValidator('json', z.object({ on: z.boolean() })), async (c) => {
     await venues.setFeatured(requireViewer(c), c.req.param('itemId'), c.req.valid('json').on);
     return c.json({ ok: true });
   })
-  .patch('/:venueId', zValidator('json', z.object({ tagline: z.string().max(80), description: z.string().max(600), isPremiere: z.boolean() }).partial()), async (c) => {
+  .patch('/:venueId', zValidator('json', z.object({ tagline: z.string().max(80), description: z.string().max(600) }).partial()), async (c) => {
     await venues.update(requireViewer(c), c.req.param('venueId'), c.req.valid('json'));
     return c.json({ ok: true });
   })

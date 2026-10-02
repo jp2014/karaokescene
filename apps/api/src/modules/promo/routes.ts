@@ -18,5 +18,4 @@ export const promoRoutes = new Hono<AppEnv>()
       }),
     ),
     async (c) => c.json(await promo.schedule(requireViewer(c), c.req.valid('json'))),
-  )
-  .post('/upgrade', async (c) => c.json(await promo.upgrade(requireViewer(c))));
+  );

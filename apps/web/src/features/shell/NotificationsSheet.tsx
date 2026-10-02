@@ -1,10 +1,12 @@
 import { Link } from '@tanstack/react-router';
-import { useEffect } from 'react';
-import { Bell } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Bell, BellRing } from 'lucide-react';
 import { api, unwrap } from '~/lib/api';
 import { ago } from '~/lib/format';
 import { qk, useAction, useNotifications } from '~/lib/queries';
-import { cx, EmptyState, Sheet } from '~/components/ui';
+import { Button, cx, EmptyState, Sheet } from '~/components/ui';
+import { enablePush, pushAvailable, pushPermission } from '~/lib/push';
 
 export function NotificationsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data } = useNotifications();
@@ -18,6 +20,7 @@ export function NotificationsSheet({ open, onClose }: { open: boolean; onClose: 
 
   return (
     <Sheet open={open} onClose={onClose} title="Notifications">
+      <PushPrompt />
       {!data?.items.length ? (
         <EmptyState icon={<Bell />} title="All quiet" body="Badges, praise, friend requests and KJ alerts show up here." />
       ) : (
@@ -38,5 +41,32 @@ export function NotificationsSheet({ open, onClose }: { open: boolean; onClose: 
         </ul>
       )}
     </Sheet>
+  );
+}
+
+/** Offer device push (FCM) when it's configured and not yet allowed. */
+function PushPrompt() {
+  const [permission, setPermission] = useState(pushPermission);
+  const [busy, setBusy] = useState(false);
+  if (!pushAvailable() || permission !== 'default') return null;
+  async function enable() {
+    setBusy(true);
+    try {
+      if (await enablePush()) toast.success('Alerts are on for this device');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setPermission(pushPermission());
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-2xl border border-violet/30 bg-violet/10 p-3 text-sm">
+      <BellRing className="size-5 shrink-0 text-violet" />
+      <span className="flex-1">Get "You're up!" and KJ alerts even when the app is closed.</span>
+      <Button size="sm" variant="primary" loading={busy} onClick={enable}>
+        Turn on
+      </Button>
+    </div>
   );
 }

@@ -14,20 +14,22 @@ export function usePresenceHeartbeat(me: Me | undefined) {
   const qc = useQueryClient();
   const prompted = useRef<string | null>(null);
   const { lat, lng } = loc.current;
+  const known = loc.known;
 
   // Real GPS mode: watch the device position.
   useEffect(() => {
     if (loc.mode !== 'real' || !navigator.geolocation) return;
     const id = navigator.geolocation.watchPosition(
       (p) => locationStore.set({ real: { lat: p.coords.latitude, lng: p.coords.longitude } }),
-      () => toast.error('Location permission denied, using simulated location'),
+      () => toast.error('Location is off, so Auto Check-in and Auto Leave are paused'),
       { enableHighAccuracy: true, maximumAge: 15_000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, [loc.mode]);
 
   useEffect(() => {
-    if (!me || me.role !== 'singer') return;
+    // No position yet (GPS not granted/fixed): don't report one, or Auto Leave would misfire.
+    if (!me || me.role !== 'singer' || !known) return;
     let cancelled = false;
     async function beat() {
       const res = await unwrap(api.presence.location.$post({ json: { lat, lng } })).catch(() => null);
@@ -61,5 +63,5 @@ export function usePresenceHeartbeat(me: Me | undefined) {
       cancelled = true;
       clearInterval(t);
     };
-  }, [me?.id, me?.role, lat, lng, qc]);
+  }, [me?.id, me?.role, lat, lng, known, qc]);
 }
