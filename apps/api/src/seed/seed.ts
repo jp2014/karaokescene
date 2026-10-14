@@ -7,7 +7,7 @@ import { newId } from '../lib/ids.ts';
 import { BADGES } from '../modules/reputation/badges.ts';
 import { DEFAULT_PRIVACY } from '../modules/profiles/service.ts';
 import { liveNight } from '../modules/venues/schedule.ts';
-import type { PrivacySettings, Visibility } from '../db/schema.ts';
+import type { HappyHour, OpenHours, PrivacySettings, VenueType, Visibility } from '../db/schema.ts';
 import {
   AGE_RANGES, BIOS, GALLERY_CAPTIONS, HOMETOWNS, KJS, NIGHTS, NIGHTS_OF_WEEK, PRAISE_LINES, SINGER_NAMES, EXTRA_SINGERS, SONGS, SPECIALS, VENUES,
 } from './data.ts';
@@ -28,6 +28,21 @@ const toMin = (hhmm: string, start?: number) => {
   const v = h * 60 + m;
   return start != null && v <= start ? v + 1440 : v;
 };
+
+/** Venue profile details (type, hours, happy hours, food) derived from the venue's vibe. */
+function venueProfile(slug: string, vibes: readonly string[]) {
+  const v = vibes.join(' ').toLowerCase();
+  const venueTypes: VenueType[] = ['Bar'];
+  if (/cocktail|wine|cozy|dressy/.test(v)) venueTypes.push('Lounge');
+  if (/sports bar|wings|families|patio/.test(v)) venueTypes.push('Restaurant');
+  if (slug === 'neon-mic' || slug === 'midtown-encore') venueTypes.push('Full Time Karaoke');
+  if (slug === 'benson-bellow') venueTypes.push('Live Band Karaoke');
+  if (slug === 'dundee-duet') venueTypes.push('Karaoke Booths');
+  const hours: OpenHours[] = [0, 1, 2, 3, 4, 5, 6].map((day) => ({ day, openMin: day === 0 ? 12 * 60 : 16 * 60, closeMin: day === 5 || day === 6 ? 26 * 60 : 25 * 60 }));
+  const happyHours: HappyHour[] = [{ days: [1, 2, 3, 4, 5], startMin: 16 * 60, endMin: 19 * 60, details: '$2 off drafts and wells' }];
+  const foodAvailable = venueTypes.includes('Restaurant') || slug === 'neon-mic';
+  return { venueTypes, hours, happyHours, foodAvailable };
+}
 
 export const DEMO_USERS = { singer: 'usr_jess', kj: 'usr_velvetvox', venue: 'usr_neon-mic' } as const;
 
@@ -103,7 +118,7 @@ export async function seed() {
         bio: isJess ? 'Wednesday regular at the Neon Mic. Dolly, Heart and anything with a key change.' : pick(BIOS),
         hometown: isJess ? 'Omaha, NE' : pick(HOMETOWNS), ageRange: isJess ? '30–34' : pick(AGE_RANGES),
         favoriteNight: isJess ? 'Wednesday' : pick(NIGHTS_OF_WEEK), yearsSinging: isJess ? 9 : 1 + Math.floor(r() * 20),
-        isPro: !isJess && r() > 0.88, ghostMode: i === 7 || i === 23, privacy,
+        isPro: !isJess && r() > 0.88, isPremium: isJess, ghostMode: i === 7 || i === 23, privacy,
         lat: near.lat + jitter(0.06), lng: near.lng + jitter(0.08),
         qrScans: isJess ? 7 : Math.floor(r() * 6), referredById: i > 30 && i < 38 ? DEMO_USERS.singer : null,
       }),
@@ -115,12 +130,23 @@ export async function seed() {
   await db.insert(schema.venues).values(
     VENUES.map((v) => ({
       id: `ven_${v.slug}`, ownerId: `usr_${v.slug}`, slug: v.slug, name: v.name, tagline: v.tagline, address: v.address, neighborhood: v.neighborhood,
-      city: v.city, lat: v.lat, lng: v.lng, hue: v.hue, isPremiere: v.premiere, capacity: v.capacity, vibes: [...v.vibes],
+      city: v.city, lat: v.lat, lng: v.lng, hue: v.hue, isPremiere: v.premiere, capacity: v.capacity, vibes: [...v.vibes], ...venueProfile(v.slug, v.vibes),
       description: `${v.name} is a ${v.vibes.join(', ').toLowerCase()} spot in ${v.neighborhood}. ${v.tagline}. Sign up with the KJ, grab a drink special, and check in on Karaoke Scene so your friends know you're here.`,
     })),
   );
-  await db.insert(schema.kjVenueLinks).values(KJS.flatMap((k) => k.venues.map((slug) => ({ kjId: `usr_${k.handle}`, venueId: `ven_${slug}` }))));
-  const nights = NIGHTS.map(([slug, day, s, e, kj]) => {
+  await db.insert(schema.kjVenueLinks).values(
+    KJS.flatMap((k) => k.venues.map((slug) => ({ kjId: `usr_${k.handle}`, venueId: `ven_${slug}`, autoPromote: k.handle === 'velvetvox' && slug === 'neon-mic' }))),
+  );
+  // A venue a KJ listed before its owner joined: unclaimed until the owner claims it.
+  const listed = { slug: 'leavenworth-lounge', name: 'Leavenworth Lounge', hue: 12, lat: 41.2522, lng: -95.9561 };
+  await db.insert(schema.users).values(baseUser({ id: `usr_${listed.slug}`, role: 'venue', handle: listed.slug, displayName: listed.name, avatarEmoji: '🍸', avatarHue: listed.hue, lat: listed.lat, lng: listed.lng }));
+  await db.insert(schema.venues).values({
+    id: `ven_${listed.slug}`, ownerId: `usr_${listed.slug}`, claimed: false, createdById: DEMO_USERS.kj, slug: listed.slug, name: listed.name, tagline: 'Karaoke with DJ Velvet Vox',
+    description: `${listed.name} was added to Karaoke Scene by DJ Velvet Vox, who hosts karaoke here.`, address: '2120 Leavenworth St', neighborhood: 'Leavenworth', city: 'Omaha',
+    lat: listed.lat, lng: listed.lng, hue: listed.hue, isPremiere: false, capacity: 60, vibes: ['Dive', 'Tuesdays'], venueTypes: ['Bar'],
+  });
+  await db.insert(schema.kjVenueLinks).values({ kjId: DEMO_USERS.kj, venueId: `ven_${listed.slug}` });
+  const nights = [...NIGHTS, ['leavenworth-lounge', 2, '21:00', '01:00', 'velvetvox'] as (typeof NIGHTS)[number]].map(([slug, day, s, e, kj]) => {
     const startMin = toMin(s);
     return { id: newId('nit'), venueId: `ven_${slug}`, kjId: `usr_${kj}`, dayOfWeek: day, startMin, endMin: toMin(e, startMin) };
   });
@@ -176,7 +202,7 @@ export async function seed() {
     const dayMs = now - d * DAY;
     const dow = localParts(dayMs).dayOfWeek;
     for (const n of nights.filter((x) => x.dayOfWeek === dow)) {
-      const venue = VENUES.find((v) => `ven_${v.slug}` === n.venueId)!;
+      const venue = VENUES.find((v) => `ven_${v.slug}` === n.venueId) ?? { capacity: 60 };
       const crowd = Math.floor((venue.capacity / 8) * (0.6 + r() * 0.8) * (dow === 5 || dow === 6 ? 1.4 : 1));
       for (const userId of sample(singerIds, Math.min(crowd, singerIds.length))) {
         // Arrivals cluster around 1.5h after start (peak), departures 1-3h later.
@@ -212,7 +238,7 @@ export async function seed() {
       if (sessionId && r() > 0.45) {
         const mine = lists.filter((l) => l.userId === userId);
         const song = mine.length ? pick(mine).songId : pick(songs).id;
-        requests.push({ id: newId('req'), kjSessionId: sessionId, singerId: userId, songId: song, source: pick(['list', 'roulette', 'search'] as const), status: 'queued', createdAt: now - Math.floor(r() * 50) * 60_000 });
+        requests.push({ id: newId('req'), kjSessionId: sessionId, singerId: userId, songId: song, source: pick(['list', 'roulette', 'search'] as const), status: 'submitted', createdAt: now - Math.floor(r() * 50) * 60_000 });
       }
     }
     // Someone just walked out: shows up as an Auto Leave on the KJ booth.
@@ -221,15 +247,17 @@ export async function seed() {
       if (leaver) checkins.push({ id: newId('chk'), userId: leaver, venueId: `ven_${v.slug}`, method: 'geo', checkedInAt: now - 70 * 60_000, checkedOutAt: now - 6 * 60_000, checkoutReason: 'auto-leave' });
     }
   });
-  // Put the active singer's queue in a believable order with one person "up".
-  requests.sort((a, b) => a.createdAt - b.createdAt);
-  const firstBySession = new Map<string, number>();
-  requests.forEach((q, i) => {
-    if (!firstBySession.has(q.kjSessionId)) {
-      firstBySession.set(q.kjSessionId, i);
-      q.status = 'up';
+  // The KJ has already accepted the earlier submissions (entered them in their own software).
+  for (const q of requests) {
+    if (q.createdAt < now - 20 * 60_000) Object.assign(q, { status: 'accepted', decidedAt: q.createdAt + 5 * 60_000 });
+  }
+  // Jess's history: a Regular at The Neon Mic, working on Dundee Duet Lounge.
+  for (const [slug, visits] of [['neon-mic', 6], ['dundee-duet', 3], ['blackstone-social', 1]] as const) {
+    for (let k = 0; k < visits; k++) {
+      const at = now - (4 + k * 7) * DAY - 60 * 60_000;
+      checkins.push({ id: newId('chk'), userId: DEMO_USERS.singer, venueId: `ven_${slug}`, method: 'qr', checkedInAt: at, checkedOutAt: at + 2 * 3600_000, checkoutReason: 'manual' });
     }
-  });
+  }
   for (let i = 0; i < checkins.length; i += 400) await db.insert(schema.checkins).values(checkins.slice(i, i + 400));
   if (kjSessions.length) await db.insert(schema.kjSessions).values(kjSessions);
   if (requests.length) await db.insert(schema.songRequests).values(requests);
@@ -249,7 +277,7 @@ export async function seed() {
     evt('benson-bellow', 'Punk Rock Karaoke', 'theme', 5, 21 * 60, 4, 'Live band backing tracks. Mosh responsibly.'),
     evt('dundee-duet', 'Duet Roulette', 'karaoke', 5, 20 * 60, 4, 'The app pairs you with a random duet partner and a random song. Good luck.'),
   ]);
-  await db.insert(schema.specials).values(SPECIALS.map(([slug, title, price, details, days]) => ({ id: newId('spc'), venueId: `ven_${slug}`, title, price, details, days, createdAt: now })));
+  await db.insert(schema.specials).values(SPECIALS.map(([slug, title, price, details, days]) => ({ id: newId('spc'), venueId: `ven_${slug}`, title, price, details, days, autoPost: slug === 'neon-mic' && title === '$3 Wells', createdAt: now })));
   const rsvps: (typeof schema.rsvps.$inferInsert)[] = [];
   for (let d = 0; d < 7; d++) {
     const date = localParts(now + d * DAY).date;
@@ -279,6 +307,15 @@ export async function seed() {
       awards.push({ id: newId('bdg'), badgeKey: badge.key, recipientId: `usr_${k.handle}`, giverId: `usr_${pick(k.venues)}`, createdAt: now - Math.floor(r() * 120) * DAY });
     }
   }
+  // Singers rate each other, their KJs and their venues (all positive).
+  const fromSinger = (givenTo: 'singer' | 'kj' | 'venue') => BADGES.filter((b) => b.givenBy === 'singer' && b.givenTo === givenTo);
+  for (let i = 0; i < 260; i++) {
+    const giverId = pick(singerIds);
+    const kind = pick(['singer', 'kj', 'venue'] as const);
+    const recipientId = kind === 'singer' ? (i < 20 ? DEMO_USERS.singer : pick(singerIds)) : kind === 'kj' ? (i % 3 === 0 ? DEMO_USERS.kj : `usr_${pick(KJS).handle}`) : i % 3 === 0 ? DEMO_USERS.venue : `usr_${pick(VENUES).slug}`;
+    if (recipientId === giverId) continue;
+    awards.push({ id: newId('bdg'), badgeKey: pick(fromSinger(kind)).key, recipientId, giverId, createdAt: now - Math.floor(r() * 90) * DAY });
+  }
   awards.push({ id: newId('bdg'), badgeKey: 'growth.scene-builder', recipientId: DEMO_USERS.singer, giverId: 'system', createdAt: now - 10 * DAY });
   awards.push({ id: newId('bdg'), badgeKey: 'growth.scene-builder', recipientId: DEMO_USERS.singer, giverId: 'system', createdAt: now - 3 * DAY });
   await db.insert(schema.badgeAwards).values(awards);
@@ -294,7 +331,23 @@ export async function seed() {
       songId: fromList.length ? pick(fromList).songId : null, createdAt: now - Math.floor(r() * 14 * 24 * 60) * 60_000,
     });
   }
+  // KJs praise singers too, which is what venues see in their feed.
+  for (let i = 0; i < 10; i++) {
+    const [emoji, message] = pick(PRAISE_LINES);
+    praise.push({ id: newId('prs'), fromId: i < 6 ? DEMO_USERS.kj : `usr_${pick(KJS).handle}`, toId: i === 0 ? DEMO_USERS.singer : pick(singerIds), emoji, message, venueId: 'ven_neon-mic', songId: null, createdAt: now - Math.floor(r() * 10 * 24 * 60) * 60_000 });
+  }
   await db.insert(schema.praise).values(praise);
+
+  // --- Wallet: venue coupons -----------------------------------------------------------
+  const coupon = (slug: string, title: string, details: string, daysAgo: number, validDays: number, redeemed = false) => ({
+    id: newId('cpn'), code: `KS${String(Math.floor(r() * 900000) + 100000)}`, venueId: `ven_${slug}`, singerId: DEMO_USERS.singer, title, details,
+    createdAt: now - daysAgo * DAY, expiresAt: now + (validDays - daysAgo) * DAY, redeemedAt: redeemed ? now - (daysAgo - 1) * DAY : null,
+  });
+  await db.insert(schema.coupons).values([
+    coupon('neon-mic', 'Free well drink', 'Thanks for being a Neon Mic regular! One well drink on us.', 2, 30),
+    coupon('blackstone-social', 'Half-off Showstopper Martini', 'Valid on karaoke nights.', 5, 21),
+    coupon('dundee-duet', '2-for-1 Duet Bottles', 'Bring your duet partner.', 12, 30, true),
+  ]);
 
   // --- Gallery, notifications, promo ------------------------------------------------------
   const gallery: (typeof schema.galleryItems.$inferInsert)[] = [];

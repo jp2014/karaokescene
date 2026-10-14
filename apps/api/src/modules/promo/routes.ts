@@ -19,4 +19,5 @@ export const promoRoutes = new Hono<AppEnv>()
     ),
     async (c) => c.json(await promo.schedule(requireViewer(c), c.req.valid('json'))),
   )
-  .post('/upgrade', async (c) => c.json(await promo.upgrade(requireViewer(c))));
+  .post('/blast', zValidator('json', z.object({ message: z.string().min(3).max(280) })), async (c) => c.json(await promo.blast(requireViewer(c, 'kj'), c.req.valid('json').message)))
+  .post('/upgrade', zValidator('json', z.object({ on: z.boolean().default(true) }).default({ on: true })), async (c) => c.json(await promo.upgrade(requireViewer(c), c.req.valid('json').on)));

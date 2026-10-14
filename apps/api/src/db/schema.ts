@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, primaryKey, index } from 'drizzle-orm/sqlite-core';
 
 /** All timestamps are epoch milliseconds. */
@@ -22,6 +23,8 @@ export const users = sqliteTable('users', {
   bio: text('bio').notNull().default(''),
   avatarHue: integer('avatar_hue').notNull().default(300),
   avatarEmoji: text('avatar_emoji').notNull().default('🎤'),
+  /** Uploaded photo (selfie, venue picture). Falls back to the generated emoji avatar. */
+  avatarUrl: text('avatar_url'),
   hometown: text('hometown'),
   ageRange: text('age_range'),
   favoriteNight: text('favorite_night'),
@@ -45,9 +48,19 @@ export const sessions = sqliteTable('sessions', {
   createdAt: ts('created_at').notNull(),
 });
 
+export const VENUE_TYPES = ['Bar', 'Lounge', 'Restaurant', 'Karaoke Booths', 'Live Band Karaoke', 'Full Time Karaoke'] as const;
+export type VenueType = (typeof VENUE_TYPES)[number];
+/** Business hours for one weekday. Minutes from local midnight; close may exceed 1440. */
+export type OpenHours = { day: number; openMin: number; closeMin: number };
+export type HappyHour = { days: number[]; startMin: number; endMin: number; details: string };
+
 export const venues = sqliteTable('venues', {
   id: text('id').primaryKey(),
+  /** The venue's account. KJ-listed venues get a placeholder account until the owner claims it. */
   ownerId: text('owner_id').notNull(),
+  claimed: integer('claimed', { mode: 'boolean' }).notNull().default(true),
+  /** The KJ who listed this venue, when it wasn't created by its owner. */
+  createdById: text('created_by_id'),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   tagline: text('tagline').notNull().default(''),
@@ -61,6 +74,13 @@ export const venues = sqliteTable('venues', {
   isPremiere: integer('is_premiere', { mode: 'boolean' }).notNull().default(false),
   capacity: integer('capacity').notNull().default(80),
   vibes: text('vibes', { mode: 'json' }).$type<string[]>().notNull(),
+  photoUrl: text('photo_url'),
+  venueTypes: text('venue_types', { mode: 'json' }).$type<VenueType[]>().notNull().default(sql`'[]'`),
+  hours: text('hours', { mode: 'json' }).$type<OpenHours[]>().notNull().default(sql`'[]'`),
+  happyHours: text('happy_hours', { mode: 'json' }).$type<HappyHour[]>().notNull().default(sql`'[]'`),
+  foodAvailable: integer('food_available', { mode: 'boolean' }).notNull().default(false),
+  /** Menu as an uploaded PDF or an external link. */
+  menuUrl: text('menu_url'),
 });
 
 /** Weekly recurring karaoke nights. Minutes are from local midnight; end may exceed 1440 (past midnight). */
@@ -75,7 +95,12 @@ export const karaokeNights = sqliteTable('karaoke_nights', {
 
 export const kjVenueLinks = sqliteTable(
   'kj_venue_links',
-  { kjId: text('kj_id').notNull(), venueId: text('venue_id').notNull() },
+  {
+    kjId: text('kj_id').notNull(),
+    venueId: text('venue_id').notNull(),
+    /** Auto Promote: post every upcoming night 24 hours before it starts. */
+    autoPromote: integer('auto_promote', { mode: 'boolean' }).notNull().default(false),
+  },
   (t) => [primaryKey({ columns: [t.kjId, t.venueId] })],
 );
 
@@ -120,6 +145,8 @@ export const specials = sqliteTable('specials', {
   price: text('price').notNull().default(''),
   details: text('details').notNull().default(''),
   days: text('days', { mode: 'json' }).$type<number[]>().notNull(),
+  /** Drink Special Auto Post (Premier): announce it on each of its days. */
+  autoPost: integer('auto_post', { mode: 'boolean' }).notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
 
@@ -138,6 +165,7 @@ export const galleryItems = sqliteTable('gallery_items', {
   caption: text('caption').notNull().default(''),
   hue: integer('hue').notNull(),
   emoji: text('emoji').notNull(),
+  imageUrl: text('image_url'),
   featured: integer('featured', { mode: 'boolean' }).notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
@@ -167,15 +195,38 @@ export const songbookEntries = sqliteTable(
   (t) => [primaryKey({ columns: [t.kjId, t.songId] })],
 );
 
+/**
+ * A singer's song submission to the KJ running the show. The app does not mirror the KJ's
+ * own rotation software: the KJ just accepts a submission once it's in their system.
+ */
 export const songRequests = sqliteTable('song_requests', {
   id: text('id').primaryKey(),
   kjSessionId: text('kj_session_id').notNull(),
   singerId: text('singer_id').notNull(),
   songId: text('song_id').notNull(),
-  source: text('source').$type<'list' | 'roulette' | 'search'>().notNull(),
-  status: text('status').$type<'queued' | 'up' | 'done' | 'skipped'>().notNull(),
+  source: text('source').$type<'list' | 'roulette' | 'search' | 'kj'>().notNull(),
+  status: text('status').$type<'submitted' | 'accepted' | 'declined' | 'withdrawn'>().notNull(),
   createdAt: ts('created_at').notNull(),
+  decidedAt: ts('decided_at'),
 });
+
+/** Venue Coupons: awarded by a venue to a singer, redeemed once when the venue scans the QR. */
+export const coupons = sqliteTable(
+  'coupons',
+  {
+    id: text('id').primaryKey(),
+    /** Short code encoded in the QR (/q/c/<code>). */
+    code: text('code').notNull().unique(),
+    venueId: text('venue_id').notNull(),
+    singerId: text('singer_id').notNull(),
+    title: text('title').notNull(),
+    details: text('details').notNull().default(''),
+    expiresAt: ts('expires_at').notNull(),
+    redeemedAt: ts('redeemed_at'),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('coupons_singer_idx').on(t.singerId)],
+);
 
 export const badgeAwards = sqliteTable('badge_awards', {
   id: text('id').primaryKey(),

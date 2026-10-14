@@ -10,6 +10,7 @@ const patch = z.object({
   bio: z.string().max(200),
   avatarHue: z.number().int().min(0).max(359),
   avatarEmoji: z.string().max(8),
+  avatarUrl: z.string().max(500).regex(/^\/api\/media\//, 'Upload a photo').nullable(),
   hometown: z.string().max(60).nullable(),
   ageRange: z.string().max(20).nullable(),
   favoriteNight: z.string().max(20).nullable(),

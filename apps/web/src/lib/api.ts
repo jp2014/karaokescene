@@ -18,6 +18,6 @@ export const tokenStore = {
   },
 };
 
-const baseUrl = import.meta.env.VITE_API_URL ?? `${window.location.origin}/api`;
+export const baseUrl = import.meta.env.VITE_API_URL ?? `${window.location.origin}/api`;
 export const api = createApiClient(baseUrl, tokenStore.get);
 export { unwrap, ApiError };

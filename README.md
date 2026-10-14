@@ -25,15 +25,22 @@ Requires Node 22+ and pnpm 10+.
 
 ## Demo script
 
-1. **Pick a persona** on the welcome screen: Jess (singer), DJ Velvet Vox (KJ) or The Neon Mic (venue).
+1. **Pick a profile** on the welcome screen (Singer, KJ or Venue), enter any email and any 6-digit code. You land in that
+   role's demo persona: Jess (singer), DJ Velvet Vox (KJ) or The Neon Mic (venue).
    The demo clock is set to **Friday 10:15pm**, so nights are live. Change it in Demo controls.
-2. **Singer:** browse the map → open The Neon Mic → **Check in** → *My Night*: request a song, spin **Song Roulette**, praise someone on stage.
-3. **KJ:** open a second tab as DJ Velvet Vox (each tab keeps its own persona) → **KJ Booth**: watch requests arrive,
-   call singers up, pull songs from a singer's go-to list, award badges.
-4. **Auto Leave:** in the singer tab, *Demo controls → Walk away*. Within ~20s the singer is checked out and the KJ gets an alert.
+2. **Singer:** browse the map → open The Neon Mic → **Check in** → *My Night*: send a song to the KJ, spin **Song Roulette**,
+   rate the venue and KJ. *My Wallet* has venue coupons (one-time QR codes). *Scan & Share* tracks Regular status (5 nights).
+3. **KJ:** open a second tab as DJ Velvet Vox (each tab keeps its own persona) → **KJ Booth**: submitted songs arrive and you
+   tap **Accept** (the app doesn't mirror the KJ's own rotation software). *My Venues*: hours, Auto Promote, list a new venue.
+4. **Auto Leave (KJ Pro):** in the singer tab, *Demo controls → Walk away*. Within ~20s the singer is checked out and the KJ gets an alert.
    *Stand inside venue* triggers the Auto Check-in prompt.
-5. **Venue:** *Venue HQ*: post events and drink specials, rate KJs, curate the gallery, toggle **Premiere Partner** (gold pin, priority listing).
-6. **Growth loop:** *Scan & Share* shows your QR card; *Demo controls → A new singer joins via my QR* earns Scene Builder badges.
+5. **Venue:** *Venue HQ*: post events and drink specials, send coupons to singers, rate KJs, curate the gallery.
+   *Profile & Settings*: photo, type, hours, happy hours, menu, associated KJs.
+6. **Paid plans:** Singer Plus, KJ Pro and Venue Premier features show locked on the free plan. Personas start upgraded;
+   *Demo controls → Paid plan* switches it off and on.
+7. **Growth loop:** *Scan & Share* shows your QR card; *Demo controls → A new singer joins via my QR* earns Scene Builder badges.
+
+**What changed, with before/after screenshots:** `/changes/` (source: `apps/web/public/changes/`). Add a round there for each feedback cycle.
 
 **Demo controls** (wrench icon) also include: switching to any of the ~120 accounts, teleporting, time travel, sending a crowd into a venue, and resetting the data.
 
@@ -51,14 +58,16 @@ packages/api-client  Typed client generated from the API's routes (Hono RPC). A 
 | --- | --- |
 | `discovery` | Map/list query (20-mi radius, hours filter, KJ Now, busy level, priority listing) and venue detail |
 | `presence` | Check-in/out, the geolocation heartbeat (Auto Check-in / Auto Leave), KJ Now sessions, Peak Hours, Singers Near You |
-| `live` | The night's rotation: requests, KJ booth, singer's "My Night" |
-| `venues` | Schedules, events, drink specials, RSVPs ("who's going"), gallery curation |
+| `live` | Song submissions (singer sends, KJ accepts), KJ booth, singer's "My Night" |
+| `venues` | Schedules, events, drink specials, RSVPs ("who's going"), gallery, venue settings, KJ-listed venues and claims |
+| `wallet` | Venue coupons: awarded by venues, redeemed once by scanning the singer's QR |
+| `media` | Photo and menu uploads (disk locally, Netlify Blobs when hosted) |
 | `profiles` | Identity, demo sign-in, privacy-filtered profile views, Ghost Mode |
 | `social` | Friends, favorites, blocks, positive-only praise |
 | `reputation` | Badge catalog and award rules (KJ→singer, venue→KJ, growth badges) |
 | `songs` | Catalog, personal song lists, roulette, recommendations, KJ songbooks + CSV import |
 | `qr` | QR scan handling and the referral growth loop |
-| `promo` | Auto-posting (mocked) and paid upgrades (mocked) |
+| `promo` | Auto-posting (mocked), Auto Promote, Message Blast, special auto-posts, paid plans (mocked checkout) |
 | `notifications` | In-app notifications (polled; swap for push/websockets later) |
 | `debug` | Demo controls: reset, clock, crowds, referrals |
 
@@ -66,14 +75,16 @@ All "now" logic goes through `lib/clock.ts`, which is how the demo time-travels.
 
 ### Real vs. mocked
 
-**Real, stored in SQLite:** accounts, profiles, privacy, check-ins, KJ sessions, rotation, badges, praise, friends/blocks/favorites,
-events, specials, RSVPs, songbooks, song lists, notifications, promo posts.
+**Real, stored in SQLite:** accounts, profiles, privacy, check-ins, KJ sessions, song submissions, badges, praise, friends/blocks/favorites,
+events, specials, RSVPs, songbooks, song lists, coupons, notifications, promo posts. Uploaded photos and menus are real files.
 
 **Mocked:**
-- Google/Facebook login. Bearer-token sessions already exist, so OAuth only changes how tokens get issued.
+- Email sign-in and verification: the screens are real, but no email is sent and you land in the role's demo persona.
+  Bearer-token sessions already exist, so real auth only changes how tokens get issued.
 - Posting to Facebook/Instagram.
-- Payments (Pro, Plus, Premiere Partner).
-- Photo uploads (the gallery uses generated art).
+- Payments (Singer Plus, KJ Pro, Venue Premier): plans unlock instantly in the demo.
+- Venue claim verification (claiming signs you in as the venue).
+- Seeded gallery photos are generated art (new uploads are real).
 - Push notifications (polled every ~6s).
 - GPS (simulated by default; real GPS can be toggled on).
 

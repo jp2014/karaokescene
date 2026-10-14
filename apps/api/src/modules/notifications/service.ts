@@ -13,7 +13,13 @@ export type NotificationKind =
   | 'song-request'
   | 'up-next'
   | 'kj-now'
-  | 'qr-scan';
+  | 'qr-scan'
+  | 'request-accepted'
+  | 'coupon'
+  | 'invite'
+  | 'promo'
+  | 'blast'
+  | 'regular';
 
 export const notifications = {
   async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }) {

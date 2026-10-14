@@ -1,13 +1,17 @@
 import { Link } from '@tanstack/react-router';
-import { Eye, Ghost, ListMusic, QrCode, Save, Shield, Sparkles, Users } from 'lucide-react';
+import { Camera, Crown, Eye, Ghost, ListMusic, QrCode, Save, Shield, Sparkles, Ticket, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Avatar, ROLE_LABEL } from '~/components/Avatar';
 import { BadgeGrid } from '~/components/Badge';
+import { FilePicker } from '~/components/FilePicker';
+import { PLANS, UpgradeSheet } from '~/components/Premium';
 import { QrCard } from '~/components/QrCard';
 import { Button, Card, cx, PageLoader, Section, Segmented, Toggle } from '~/components/ui';
 import { api, unwrap } from '~/lib/api';
 import { DAYS_LONG } from '~/lib/format';
 import { qk, useAction, useMe, type Me } from '~/lib/queries';
+import { VenueSettings } from './VenueSettings';
 
 type Vis = 'everyone' | 'friends' | 'nobody';
 type PrivacyKey = 'hometown' | 'ageRange' | 'favoriteNight' | 'yearsSinging' | 'proStatus' | 'songList';
@@ -25,7 +29,26 @@ const AGES = ['21–24', '25–29', '30–34', '35–44', '45–54', '55+'];
 export function MePage() {
   const { data: me } = useMe();
   if (!me) return <PageLoader />;
+  if (me.role === 'venue') return <VenueSettings me={me} key={me.id} />;
   return <MeEditor me={me} key={me.id} />;
+}
+
+/** Your plan, with the demo's unlock / re-lock switch. */
+export function PlanCard({ me }: { me: Me }) {
+  const [open, setOpen] = useState(false);
+  const plan = PLANS[me.role];
+  return (
+    <Card className={cx('p-5', me.isPremium && 'border-gold/40')}>
+      <div className="flex items-center gap-2 font-semibold">
+        <Crown className="size-4 text-gold" /> {me.isPremium ? plan.name : 'Free plan'}
+      </div>
+      <p className="mt-1 text-sm text-muted">{me.isPremium ? `Includes: ${plan.features.join(', ').toLowerCase()}.` : `Upgrade to ${plan.name} (${plan.price}) for ${plan.features.join(', ').toLowerCase()}.`}</p>
+      <Button size="sm" variant={me.isPremium ? 'secondary' : 'primary'} className="mt-3" onClick={() => setOpen(true)}>
+        {me.isPremium ? 'Manage plan' : `See ${plan.name}`}
+      </Button>
+      <UpgradeSheet open={open} onClose={() => setOpen(false)} />
+    </Card>
+  );
 }
 
 function MeEditor({ me }: { me: Me }) {
@@ -76,22 +99,35 @@ function MeEditor({ me }: { me: Me }) {
       <div className="grid gap-8 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
           {/* Ghost mode */}
-          <Card className={cx('flex items-center gap-4 p-5 transition', me.ghostMode && 'border-violet/50 bg-violet/10')}>
-            <div className={cx('grid size-12 shrink-0 place-items-center rounded-2xl text-2xl', me.ghostMode ? 'bg-violet/30' : 'bg-surface-2')}>
-              <Ghost className="size-6" />
-            </div>
-            <div className="flex-1">
-              <div className="font-semibold">Ghost Mode</div>
-              <div className="text-sm text-muted">Hide your presence. You won't appear in "Who's here", friend counts or Singers Near You. The KJ still sees an anonymous ghost in the rotation.</div>
-            </div>
-            <Toggle on={me.ghostMode} onChange={(ghostMode) => save.mutate({ ghostMode })} label="Ghost Mode" />
-          </Card>
+          {me.role === 'singer' && (
+            <Card className={cx('flex items-center gap-4 p-5 transition', me.ghostMode && 'border-violet/50 bg-violet/10')}>
+              <div className={cx('grid size-12 shrink-0 place-items-center rounded-2xl text-2xl', me.ghostMode ? 'bg-violet/30' : 'bg-surface-2')}>
+                <Ghost className="size-6" />
+              </div>
+              <div className="flex-1">
+                <div className="font-semibold">Ghost Mode</div>
+                <div className="text-sm text-muted">Hide your presence. You won't appear in "Who's here", friend counts or Singers Near You. The KJ still sees an anonymous ghost in the room.</div>
+              </div>
+              <Toggle on={me.ghostMode} onChange={(ghostMode) => save.mutate({ ghostMode })} label="Ghost Mode" />
+            </Card>
+          )}
 
           <Section title="Profile" icon={<Sparkles className="size-5 text-pink" />}>
             <Card className="space-y-5 p-5">
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <Avatar user={{ ...me, avatarEmoji: form.avatarEmoji, avatarHue: form.avatarHue }} size="xl" />
-                <div className="flex-1 space-y-3">
+                <div className="flex flex-col gap-2">
+                  <FilePicker variant="primary" size="sm" capture={me.role === 'singer' ? 'user' : undefined} onUploaded={(avatarUrl) => save.mutate({ avatarUrl }, { onSuccess: () => toast.success('Photo updated 📸') })}>
+                    <Camera className="size-4" /> {me.role === 'singer' ? 'Take a selfie' : 'Upload a photo'}
+                  </FilePicker>
+                  {me.avatarUrl && (
+                    <Button size="sm" variant="ghost" onClick={() => save.mutate({ avatarUrl: null })}>
+                      <X className="size-4" /> Remove photo
+                    </Button>
+                  )}
+                </div>
+                {!me.avatarUrl && <div className="min-w-56 flex-1 space-y-3">
+                  <div className="text-xs text-muted">No photo? Pick an icon and color instead.</div>
                   <div className="flex flex-wrap gap-1.5">
                     {EMOJIS.map((e) => (
                       <button key={e} onClick={() => set('avatarEmoji', e)} className={cx('grid size-9 place-items-center rounded-xl text-lg', form.avatarEmoji === e ? 'bg-pink/20 ring-2 ring-pink' : 'bg-surface-2 hover:bg-surface-3')}>
@@ -100,7 +136,7 @@ function MeEditor({ me }: { me: Me }) {
                     ))}
                   </div>
                   <input type="range" min={0} max={359} value={form.avatarHue} onChange={(e) => set('avatarHue', Number(e.target.value))} className="h-3 w-full appearance-none !rounded-full !border-0 !p-0" style={{ background: 'linear-gradient(90deg, hsl(0 90% 60%), hsl(60 90% 60%), hsl(120 90% 50%), hsl(180 90% 50%), hsl(240 90% 65%), hsl(300 90% 60%), hsl(359 90% 60%))' }} aria-label="Avatar color" />
-                </div>
+                </div>}
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Display name">
@@ -174,6 +210,7 @@ function MeEditor({ me }: { me: Me }) {
         </div>
 
         <aside className="space-y-6">
+          <PlanCard me={me} />
           <QrCard kind="u" keyValue={me.handle} title={me.displayName} subtitle={`${ROLE_LABEL[me.role]} on Karaoke Scene`} user={me} hue={me.avatarHue} />
           <Card className="p-5">
             <div className="flex items-center gap-2 font-semibold">
@@ -191,6 +228,14 @@ function MeEditor({ me }: { me: Me }) {
           </Card>
           <div className="grid grid-cols-2 gap-2">
             {me.role === 'singer' && (
+              <Link to="/wallet">
+                <Card className="p-4 transition hover:border-line-strong">
+                  <Ticket className="size-5 text-gold" />
+                  <div className="mt-2 text-sm font-semibold">My Wallet</div>
+                </Card>
+              </Link>
+            )}
+            {me.role === 'singer' && (
               <Link to="/songs">
                 <Card className="p-4 transition hover:border-line-strong">
                   <ListMusic className="size-5 text-violet" />
@@ -201,7 +246,13 @@ function MeEditor({ me }: { me: Me }) {
             <Link to="/friends">
               <Card className="p-4 transition hover:border-line-strong">
                 <Users className="size-5 text-cyan" />
-                <div className="mt-2 text-sm font-semibold">Friends & blocks</div>
+                <div className="mt-2 text-sm font-semibold">{me.role === 'singer' ? 'Friends & blocks' : 'Singers near you'}</div>
+              </Card>
+            </Link>
+            <Link to="/feed">
+              <Card className="p-4 transition hover:border-line-strong">
+                <Sparkles className="size-5 text-pink" />
+                <div className="mt-2 text-sm font-semibold">Praise Feed</div>
               </Card>
             </Link>
           </div>
@@ -211,7 +262,7 @@ function MeEditor({ me }: { me: Me }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</span>

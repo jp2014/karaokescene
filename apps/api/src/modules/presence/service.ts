@@ -5,6 +5,7 @@ import { clock, localParts } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { ARRIVE_RADIUS_MI, distanceMi, LEAVE_RADIUS_MI, type LatLng } from '../../lib/geo.ts';
 import { fail, notFound } from '../../lib/http.ts';
+import { hasPremium } from '../../lib/plans.ts';
 import { newId } from '../../lib/ids.ts';
 import { notifications } from '../notifications/service.ts';
 import { social } from '../social/service.ts';
@@ -17,6 +18,10 @@ const CHECKIN_TTL_MS = 8 * 3600_000;
 
 const activeCheckinWhere = () => and(isNull(C.checkedOutAt), gte(C.checkedInAt, clock.now() - CHECKIN_TTL_MS));
 const activeKjWhere = () => and(isNull(K.endedAt), gte(K.startedAt, clock.now() - 12 * 3600_000));
+/** Check-ins (on separate nights) that make you a Regular at a venue. */
+export const REGULAR_AFTER = 5;
+/** Karaoke nights run past midnight: shift 6h so a 1am check-in counts toward the night before. */
+const nightOf = (ms: number) => localParts(ms - 6 * 3600_000).date;
 
 export type BusyLevel = 'quiet' | 'warming-up' | 'busy' | 'packed';
 export function busyLevel(count: number, capacity: number): BusyLevel {
@@ -71,6 +76,12 @@ export const presence = {
     if (current) await presence.checkOut(user, 'manual');
     const row = { id: newId('chk'), userId: user.id, venueId, method, checkedInAt: clock.now(), checkedOutAt: null, checkoutReason: null };
     await db.insert(C).values(row);
+    if (user.role === 'singer') {
+      const visits = await presence.visitCount(user.id, venueId);
+      if (visits === REGULAR_AFTER) {
+        await notifications.send(user.id, { kind: 'regular', title: `⭐ You're a Regular at ${venue!.name}!`, body: `${REGULAR_AFTER} nights checked in. The KJ and venue can see it on your profile.`, link: '/scan' });
+      }
+    }
     const kj = await presence.activeKjSession(venueId);
     if (kj && user.role === 'singer') {
       await notifications.send(kj.kjId, {
@@ -84,8 +95,8 @@ export const presence = {
   },
 
   /**
-   * Ends the user's check-in. Auto Leave (geofence exit) notifies the KJ so they can
-   * pull that singer from the rotation, and drops their queued songs.
+   * Ends the user's check-in and withdraws their pending song submissions. Auto Leave
+   * (geofence exit) also alerts the KJ, a KJ Pro feature.
    */
   async checkOut(user: User, reason: 'manual' | 'auto-leave') {
     const current = await presence.currentCheckin(user.id);
@@ -95,14 +106,15 @@ export const presence = {
     if (kj) {
       const dropped = await db
         .update(schema.songRequests)
-        .set({ status: 'skipped' })
-        .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, user.id), eq(schema.songRequests.status, 'queued')))
+        .set({ status: 'withdrawn', decidedAt: clock.now() })
+        .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, user.id), eq(schema.songRequests.status, 'submitted')))
         .returning();
-      if (reason === 'auto-leave') {
+      const kjUser = reason === 'auto-leave' ? await db.query.users.findFirst({ where: eq(schema.users.id, kj.kjId) }) : undefined;
+      if (kjUser && (await hasPremium(kjUser))) {
         await notifications.send(kj.kjId, {
           kind: 'auto-leave',
           title: `🚪 ${user.ghostMode ? 'A ghost singer' : user.displayName} left the venue`,
-          body: dropped.length ? `Auto Leave pulled ${dropped.length} song${dropped.length > 1 ? 's' : ''} from your queue` : 'Auto Leave: they walked out of range',
+          body: dropped.length ? `Auto Leave withdrew ${dropped.length} pending song${dropped.length > 1 ? 's' : ''}` : 'Auto Leave: they walked out of range',
           link: '/kj',
         });
       }
@@ -200,6 +212,23 @@ export const presence = {
     }));
   },
 
+  /** Nights (not check-ins) a user has spent at a venue. */
+  async visitCount(userId: string, venueId: string) {
+    const rows = await db.select({ at: C.checkedInAt }).from(C).where(and(eq(C.userId, userId), eq(C.venueId, venueId)));
+    return new Set(rows.map((r) => nightOf(r.at))).size;
+  },
+
+  /** Venues a singer has been to, with progress toward Regular status, most visited first. */
+  async regulars(userId: string) {
+    const rows = await db.select({ venueId: C.venueId, at: C.checkedInAt }).from(C).where(eq(C.userId, userId));
+    const nights = new Map<string, Set<string>>();
+    for (const r of rows) nights.set(r.venueId, (nights.get(r.venueId) ?? new Set()).add(nightOf(r.at)));
+    const vs = nights.size ? await db.select().from(schema.venues).where(inArray(schema.venues.id, [...nights.keys()])) : [];
+    return vs
+      .map((v) => ({ venue: { id: v.id, slug: v.slug, name: v.name, hue: v.hue, photoUrl: v.photoUrl }, visits: nights.get(v.id)!.size, isRegular: nights.get(v.id)!.size >= REGULAR_AFTER }))
+      .sort((a, b) => b.visits - a.visits);
+  },
+
   /** Singers Near You: helps KJs and venues know who to invite. Respects ghost mode and blocks. */
   async singersNear(viewer: User, center: LatLng, radiusMi: number) {
     const hidden = await social.hiddenIds(viewer.id);
@@ -213,5 +242,24 @@ export const presence = {
       if (d <= radiusMi) out.push({ ...toCard(u), distanceMi: Math.round(d * 10) / 10, checkedInVenueId: at.get(u.id) ?? null });
     }
     return out.sort((a, b) => a.distanceMi - b.distanceMi);
+  },
+
+  /**
+   * "Promote tonight": a KJ or venue pings singers near them about tonight's show.
+   * Singers already at that venue are skipped; one ping per singer per sender per night.
+   */
+  async promoteTonight(sender: User, center: LatLng, radiusMi: number, show: { venueId: string; venueName: string; venueSlug: string; when: string }) {
+    const near = (await presence.singersNear(sender, center, radiusMi)).filter((s) => s.checkedInVenueId !== show.venueId);
+    const since = clock.now() - 12 * 3600_000;
+    const already = new Set(
+      (await db.select({ userId: schema.notifications.userId, title: schema.notifications.title }).from(schema.notifications).where(and(eq(schema.notifications.kind, 'promo'), gte(schema.notifications.createdAt, since))))
+        .filter((n) => n.title.includes(sender.displayName))
+        .map((n) => n.userId),
+    );
+    const targets = near.filter((s) => !already.has(s.id));
+    for (const s of targets) {
+      await notifications.send(s.id, { kind: 'promo', title: `🎤 ${sender.displayName}: karaoke tonight!`, body: `${show.venueName} · ${show.when}. Come sing with us.`, link: `/venues/${show.venueSlug}` });
+    }
+    return { sent: targets.length, skipped: near.length - targets.length };
   },
 };

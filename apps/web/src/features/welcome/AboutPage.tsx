@@ -6,8 +6,8 @@ import { Button, cx } from '~/components/ui';
 const LOOP = [
   { icon: Map, title: 'Discover', body: 'Singers see every karaoke night within 20 miles, with live KJ Now status and crowd levels.' },
   { icon: QrCode, title: 'Check in', body: 'Walk in and get a check-in prompt, or scan the code by the stage.' },
-  { icon: Mic2, title: 'Sing', body: 'Request from your song list or spin Song Roulette. The KJ sees it instantly.' },
-  { icon: Award, title: 'Get recognized', body: 'KJs award badges, fellow singers send praise. Reputation follows you from bar to bar.' },
+  { icon: Mic2, title: 'Sing', body: 'Send a song from your list or spin Song Roulette. You see when the KJ accepts it.' },
+  { icon: Award, title: 'Get recognized', body: 'Positive-only trust badges and praise. Reputation follows you from bar to bar.' },
 ];
 
 const AUDIENCES = [
@@ -15,26 +15,26 @@ const AUDIENCES = [
     icon: Disc3,
     who: 'For KJs',
     color: 'from-violet to-cyan',
-    points: ['Go live with "KJ Now" and ping every fan who favorited you', 'See who walked in and what they want to sing', 'Auto Leave pulls no-shows from your rotation', 'Earn venue badges that help you land more gigs', 'Auto-post your nights to Facebook & Instagram'],
+    points: ['Upload your song book so singers know what you’ve got', 'Accept song submissions in a tap; keep your own rotation software', 'List the venues you host at, even before the owner joins', 'Promote tonight to singers near you', 'Pro: auto social posting, Auto Leave and Message Blast'],
   },
   {
     icon: Store,
     who: 'For venues',
     color: 'from-cyan to-live',
-    points: ['Post events and drink specials in seconds', 'See who’s going before the night starts', 'Peak Hours insights from real check-ins', 'Curate a gallery of your best nights', 'Premiere Partner: priority on the map'],
+    points: ['Post events, drink specials, hours, happy hours and your menu', 'Reward singers with one-time coupons', 'Rate your KJs and choose who hosts', 'Promote tonight to singers nearby', 'Premier: priority listing, who’s going, Peak Hours, special auto-posts'],
   },
   {
     icon: Mic2,
     who: 'For singers',
     color: 'from-pink to-violet',
-    points: ['Find tonight’s best night in one glance', 'Keep your go-to songs ready for any KJ', 'Find your friends, or go Ghost', 'Positive-only praise from fellow singers', 'Collect badges and build your rep'],
+    points: ['Find tonight’s best night in one glance', 'Keep your go-to songs ready for any KJ', 'Invite friends out, or go Ghost', 'Become a Regular and collect venue coupons', 'Rate venues and KJs, and praise fellow singers'],
   },
 ];
 
 const PRICING = [
-  { name: 'Singer Plus', price: '$2.99', per: '/mo', body: 'Smart song recommendations and featured profile boosts.', icon: Star },
-  { name: 'KJ Pro', price: '$9', per: '/mo', body: 'Auto-posting to Facebook & Instagram, booking insights.', icon: Megaphone, featured: true },
-  { name: 'Premiere Partner', price: '$49', per: '/mo', body: 'Priority listing, gold pin, featured events for venues.', icon: Store },
+  { name: 'Singer Plus', price: '$2.99', per: '/mo', body: 'Smart song recommendations and venue coupons.', icon: Star },
+  { name: 'KJ Pro', price: '$9', per: '/mo', body: 'Auto social posting, Auto Leave and Message Blast to your singers.', icon: Megaphone, featured: true },
+  { name: 'Venue Premier', price: '$49', per: '/mo', body: 'Premier listing, show who’s going, Peak Hours and Drink Special Auto Post.', icon: Store },
 ];
 
 export function AboutPage() {
@@ -117,7 +117,7 @@ export function AboutPage() {
             {[
               [Bell, 'KJ Now alerts', 'Fans get pinged the moment you go live'],
               [DoorOpen, 'Auto Leave', 'Rotation stays clean, automatically'],
-              [Award, 'Trust badges', 'Venues rate KJs, KJs rate singers'],
+              [Award, 'Trust badges', 'All positive: singers rate each other, KJs and venues; venues rate KJs'],
               [Map, '20-mile focus', 'Local by design'],
             ].map(([Icon, t, b]) => {
               const I = Icon as typeof Bell;

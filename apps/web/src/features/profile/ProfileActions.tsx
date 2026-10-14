@@ -46,16 +46,17 @@ export function PraiseSheet({ open, onClose, to, venueId }: { open: boolean; onC
   );
 }
 
-/** KJs award singer badges; venues award KJ badges. Once per badge per night. */
+/** Positive badges: singers rate singers, KJs and venues; KJs rate singers; venues rate KJs. Once per badge per night. */
 export function AwardBadgeSheet({ open, onClose, to }: { open: boolean; onClose: () => void; to: { id: string; displayName: string; handle: string } }) {
   const { data, isLoading, refetch } = useQuery({ queryKey: ['awardable', to.id], queryFn: () => unwrap(api.reputation.awardable[':userId'].$get({ param: { userId: to.id } })), enabled: open });
   const award = useAction((badgeKey: string) => unwrap(api.reputation.award.$post({ json: { recipientId: to.id, badgeKey } })), {
-    invalidate: [qk.profile(to.handle), qk.booth],
+    invalidate: [qk.profile(to.handle), qk.booth, ['venue']],
     success: (_, key) => `${data?.find((b) => b.key === key)?.label} awarded to ${to.displayName.split(' ')[0]} 🏅`,
     onSuccess: () => refetch(),
   });
   return (
-    <Sheet open={open} onClose={onClose} title={`Award ${to.displayName.split(' ')[0]} a badge`}>
+    <Sheet open={open} onClose={onClose} title={`Rate ${to.displayName}`}>
+      <p className="mb-4 text-sm text-muted">Positive badges only. Pick what stood out tonight.</p>
       {isLoading ? (
         <Spinner />
       ) : (

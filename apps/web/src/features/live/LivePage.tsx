@@ -1,20 +1,19 @@
 import { Link } from '@tanstack/react-router';
-import { motion } from 'motion/react';
-import { LogOut, MessageCircleHeart, Mic2, Music2, Send, Star, X } from 'lucide-react';
+import { Award, CheckCircle2, Clock3, LogOut, Mic2, Music2, Send, Star, X } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar } from '~/components/Avatar';
 import { BusyMeter } from '~/components/BusyMeter';
-import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section } from '~/components/ui';
+import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Toggle } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { VenueCard } from '~/features/discover/VenueCard';
-import { PraiseSheet } from '~/features/profile/ProfileActions';
+import { AwardBadgeSheet, PraiseSheet } from '~/features/profile/ProfileActions';
 import { SongRoulette } from '~/features/songs/SongRoulette';
 import { api, unwrap } from '~/lib/api';
-import { duration, serverNow } from '~/lib/format';
+import { ago, duration, serverNow } from '~/lib/format';
 import { useLocation } from '~/lib/location';
 import { qk, useAction, useMe, useMyLive, useMySongs, useVenue, useVenues } from '~/lib/queries';
 
-/** The singer's "I'm here" screen: the rotation, my requests, roulette and who's in the room. */
+/** The singer's "I'm here" screen: songs sent to the KJ, roulette, ratings and who's in the room. */
 export function LivePage() {
   const { data, isLoading } = useMyLive();
   if (isLoading) return <PageLoader />;
@@ -25,26 +24,28 @@ export function LivePage() {
 type LiveData = NonNullable<ReturnType<typeof useMyLive>['data']> & { venue: NonNullable<NonNullable<ReturnType<typeof useMyLive>['data']>['venue']>; checkin: NonNullable<NonNullable<ReturnType<typeof useMyLive>['data']>['checkin']> };
 
 function LiveNight({ data }: { data: LiveData }) {
-  const { data: songs } = useMySongs();
+  const { data: songs } = useMySongs(data.kj?.id);
   const { data: venue } = useVenue(data.venue.slug);
   const { data: me } = useMe();
   const [praiseTo, setPraiseTo] = useState<{ id: string; displayName: string; handle: string } | null>(null);
+  const [rate, setRate] = useState<{ id: string; displayName: string; handle: string } | null>(null);
+  const [onlyKjBook, setOnlyKjBook] = useState(true);
   const inv = [qk.myLive, qk.me, ['venues'], qk.venue(data.venue.slug)];
-  const request = useAction((x: { songId: string; source: 'list' | 'roulette' | 'search' }) => unwrap(api.live.requests.$post({ json: x })), { invalidate: inv, success: 'Sent to the KJ 🎤' });
-  const cancel = useAction((id: string) => unwrap(api.live.requests[':id'].$delete({ param: { id } })), { invalidate: inv, success: 'Request withdrawn' });
+  const submit = useAction((x: { songId: string; source: 'list' | 'roulette' | 'search' }) => unwrap(api.live.submissions.$post({ json: x })), { invalidate: inv, success: 'Sent to the KJ 🎤 You’ll see when they accept it.' });
+  const withdraw = useAction((id: string) => unwrap(api.live.submissions[':id'].$delete({ param: { id } })), { invalidate: inv, success: 'Song withdrawn' });
   const checkOut = useAction(() => unwrap(api.presence['check-out'].$post()), { invalidate: inv, success: 'Checked out. Thanks for singing!' });
 
-  const myQueued = data.queue.filter((q) => q.isMine);
-  const up = data.queue.find((q) => q.status === 'up');
-  const waiting = data.queue.filter((q) => q.status === 'queued');
-  const myPos = waiting.findIndex((q) => q.isMine);
-  const canRequest = !!data.kjSessionId && myQueued.filter((q) => q.status === 'queued').length < 2;
-  const requested = new Set(myQueued.map((q) => q.song.id));
+  const pending = data.submissions.filter((q) => q.status === 'submitted');
+  const sent = new Set(pending.map((q) => q.song.id));
+  const canSubmit = !!data.kjSessionId && pending.length < 3;
+  const hasBookInfo = songs?.some((s) => s.inKjBook != null);
+  const list = (songs ?? []).filter((s) => !onlyKjBook || s.inKjBook !== false);
+  const hidden = (songs?.length ?? 0) - list.length;
 
   return (
     <div className="space-y-6">
       <Card className="relative overflow-hidden">
-        <VenueArt name={data.venue.name} hue={data.venue.hue} big className="absolute inset-0 opacity-50" />
+        <VenueArt name={data.venue.name} hue={data.venue.hue} photoUrl={data.venue.photoUrl} big className="absolute inset-0 opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/80 to-ink/30" />
         <div className="relative flex flex-wrap items-center gap-4 p-6">
           <div className="min-w-0 flex-1">
@@ -57,10 +58,10 @@ function LiveNight({ data }: { data: LiveData }) {
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted">
               {data.kj ? (
                 <span className="flex items-center gap-2">
-                  <Avatar user={data.kj} size="xs" /> {data.kj.displayName} is running the show
+                  <Avatar user={data.kj} size="xs" /> {data.kj.displayName} is hosting
                 </span>
               ) : (
-                <span>The KJ hasn't started yet. Requests open when they go live.</span>
+                <span>The KJ hasn't checked in yet. You can send songs once they do.</span>
               )}
               {venue && <BusyMeter level={venue.crowd.level} count={venue.crowd.count} />}
               {me?.ghostMode && <Pill tone="violet">👻 Ghost</Pill>}
@@ -74,111 +75,108 @@ function LiveNight({ data }: { data: LiveData }) {
 
       <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
-          {/* Now singing + my position */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Card className="p-5">
-              <div className="text-xs font-bold tracking-widest text-muted uppercase">On stage</div>
-              {up ? (
-                <div className="mt-3 flex items-center gap-3">
-                  <motion.div animate={{ rotate: [0, -6, 6, 0] }} transition={{ repeat: Infinity, duration: 1.6 }}>
-                    <Avatar user={up.singer} size="lg" />
-                  </motion.div>
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold">{up.isMine ? 'You! 🎤' : up.singer.displayName}</div>
-                    <div className="truncate text-sm text-muted">
-                      {up.song.title} · {up.song.artist}
-                    </div>
-                    {!up.isMine && up.singer.role === 'singer' && (
-                      <button onClick={() => setPraiseTo(up.singer)} className="mt-1 flex items-center gap-1 text-xs font-semibold text-pink">
-                        <MessageCircleHeart className="size-3.5" /> Send praise
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 text-muted">Between songs</div>
-              )}
-            </Card>
-            <Card className={cx('p-5', myPos >= 0 && 'border-pink/40')} glow={myPos >= 0 && myPos < 2 ? 'pink' : undefined}>
-              <div className="text-xs font-bold tracking-widest text-muted uppercase">Your turn</div>
-              {up?.isMine ? (
-                <div className="mt-2 font-display text-3xl font-bold text-gradient">You're up!</div>
-              ) : myPos >= 0 ? (
-                <>
-                  <div className="mt-2 font-display text-4xl font-bold">{myPos === 0 ? 'Next!' : `#${myPos + 1}`}</div>
-                  <div className="text-sm text-muted">{myPos === 0 ? 'Head toward the stage' : `${myPos} singer${myPos > 1 ? 's' : ''} ahead of you`}</div>
-                </>
-              ) : (
-                <div className="mt-2 text-muted">Pick a song below to get in the rotation.</div>
-              )}
-            </Card>
-          </div>
-
-          {myQueued.length > 0 && (
-            <Section title="Your requests">
+          <Section title="Your songs tonight" icon={<Music2 className="size-5 text-pink" />}>
+            <p className="-mt-1 text-sm text-muted">The KJ runs the rotation in their own system. Send them a song here and you'll see when they've accepted it.</p>
+            {data.submissions.length ? (
               <div className="space-y-2">
-                {myQueued.map((q) => (
-                  <div key={q.id} className="flex items-center gap-3 rounded-2xl border border-pink/30 bg-pink/5 p-3">
-                    <Music2 className="size-5 text-pink" />
+                {data.submissions.map((q) => (
+                  <div key={q.id} className={cx('flex items-center gap-3 rounded-2xl border p-3', q.status === 'accepted' ? 'border-live/30 bg-live/5' : 'border-pink/30 bg-pink/5')}>
+                    {q.status === 'accepted' ? <CheckCircle2 className="size-5 shrink-0 text-live" /> : <Clock3 className="size-5 shrink-0 text-pink" />}
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold">{q.song.title}</div>
-                      <div className="truncate text-xs text-muted">{q.song.artist}</div>
+                      <div className="truncate text-xs text-muted">
+                        {q.song.artist} · {q.status === 'accepted' ? `accepted ${ago(q.decidedAt ?? q.createdAt)}${q.source === 'kj' ? ' · picked by the KJ' : ''}` : `sent ${ago(q.createdAt)}`}
+                      </div>
                     </div>
-                    <Pill tone={q.status === 'up' ? 'live' : 'pink'}>{q.status === 'up' ? 'On stage' : 'Queued'}</Pill>
-                    {q.status === 'queued' && (
-                      <button onClick={() => cancel.mutate(q.id)} className="text-faint hover:text-fg" aria-label="Withdraw">
+                    <Pill tone={q.status === 'accepted' ? 'live' : 'pink'}>{q.status === 'accepted' ? 'Accepted' : 'Submitted'}</Pill>
+                    {q.status === 'submitted' && (
+                      <button onClick={() => withdraw.mutate(q.id)} className="text-faint hover:text-fg" aria-label="Withdraw">
                         <X className="size-4" />
                       </button>
                     )}
                   </div>
                 ))}
               </div>
-            </Section>
-          )}
+            ) : (
+              <EmptyState icon="🎶" title="No songs sent yet" body={data.kj ? 'Pick one from your list below.' : 'Songs open up when the KJ checks in.'} />
+            )}
+          </Section>
 
-          <Section title="Request from your list" icon={<Mic2 className="size-5 text-violet" />} action={!canRequest && data.kjSessionId ? <span className="text-xs text-muted">Max 2 in the rotation</span> : undefined}>
+          <Section
+            title="Send a song"
+            icon={<Mic2 className="size-5 text-violet" />}
+            action={!canSubmit && data.kjSessionId ? <span className="text-xs text-muted">3 waiting max</span> : undefined}
+          >
+            {hasBookInfo && data.kj && (
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface/70 px-4 py-3 text-sm">
+                <Toggle on={onlyKjBook} onChange={setOnlyKjBook} label="Only songs the KJ has" />
+                <span className="flex-1">
+                  Only songs in <b>{data.kj.displayName}</b>'s song book
+                  {onlyKjBook && hidden > 0 && <span className="text-muted"> · {hidden} hidden</span>}
+                </span>
+              </div>
+            )}
             <Card className="max-h-[420px] divide-y divide-line overflow-y-auto">
-              {songs?.map((s) => (
+              {list.map((s) => (
                 <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
                   {s.isGoTo ? <Star className="size-4 shrink-0 fill-gold text-gold" /> : <span className="size-4 shrink-0" />}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold">{s.title}</div>
-                    <div className="truncate text-xs text-muted">{s.artist}</div>
+                    <div className="truncate text-xs text-muted">
+                      {s.artist}
+                      {s.inKjBook === false && ' · not in this KJ’s book'}
+                    </div>
                   </div>
-                  <Button size="sm" disabled={!canRequest || requested.has(s.id)} onClick={() => request.mutate({ songId: s.id, source: 'list' })}>
-                    <Send className="size-3.5" /> {requested.has(s.id) ? 'Requested' : 'Request'}
+                  <Button size="sm" disabled={!canSubmit || sent.has(s.id)} onClick={() => submit.mutate({ songId: s.id, source: 'list' })}>
+                    <Send className="size-3.5" /> {sent.has(s.id) ? 'Sent' : 'Send'}
                   </Button>
                 </div>
               ))}
+              {!list.length && <div className="p-4 text-sm text-muted">No songs here yet. Add some on your Song List.</div>}
             </Card>
+            <Link to="/songs" className="block text-xs text-muted hover:text-fg">
+              + Add songs to your list
+            </Link>
           </Section>
         </div>
 
         <aside className="space-y-6">
           <SongRoulette
-            pool={songs ?? []}
+            pool={list}
             kjId={data.kj?.id}
             action={(s) => (
-              <Button variant="live" disabled={!canRequest} onClick={() => request.mutate({ songId: s.id, source: 'roulette' })}>
+              <Button variant="live" disabled={!canSubmit || sent.has(s.id)} onClick={() => submit.mutate({ songId: s.id, source: 'roulette' })}>
                 <Send className="size-4" /> Send to KJ
               </Button>
             )}
           />
-          <Section title="The rotation">
-            <Card className="divide-y divide-line">
-              {waiting.slice(0, 8).map((q, i) => (
-                <div key={q.id} className={cx('flex items-center gap-3 px-4 py-2.5', q.isMine && 'bg-pink/10')}>
-                  <span className="w-5 text-center text-xs font-bold text-faint">{i + 1}</span>
-                  <Avatar user={q.singer} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">{q.isMine ? 'You' : q.singer.displayName}</div>
-                    <div className="truncate text-xs text-muted">{q.song.title}</div>
-                  </div>
-                </div>
-              ))}
-              {!waiting.length && <div className="p-4 text-sm text-muted">The rotation is empty. Be the first!</div>}
+          {venue && (
+            <Card className="p-5">
+              <div className="flex items-center gap-2 font-semibold">
+                <Award className="size-4 text-gold" /> Rate tonight
+              </div>
+              <p className="mt-1 text-sm text-muted">Positive badges only. They help other singers pick a great night.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => setRate({ id: venue.venue.ownerId, displayName: venue.venue.name, handle: venue.venue.ownerHandle ?? venue.venue.slug })}>
+                  Rate {venue.venue.name}
+                </Button>
+                {data.kj && (
+                  <Button size="sm" onClick={() => setRate(data.kj!)}>
+                    Rate {data.kj.displayName}
+                  </Button>
+                )}
+              </div>
+              <div className="mt-4 border-t border-line pt-3 text-xs text-muted">
+                {venue.myVisits >= venue.regularAfter ? (
+                  <span className="text-gold">⭐ You're a Regular here ({venue.myVisits} nights)</span>
+                ) : (
+                  <>
+                    {venue.myVisits} of {venue.regularAfter} nights to become a Regular here
+                  </>
+                )}
+              </div>
             </Card>
-          </Section>
+          )}
           {venue && venue.here.length > 0 && (
             <Section title="In the room">
               <div className="flex flex-wrap gap-2">
@@ -197,6 +195,7 @@ function LiveNight({ data }: { data: LiveData }) {
         </aside>
       </div>
       {praiseTo && <PraiseSheet open onClose={() => setPraiseTo(null)} to={praiseTo} venueId={data.venue.id} />}
+      {rate && <AwardBadgeSheet open onClose={() => setRate(null)} to={rate} />}
     </div>
   );
 }
@@ -210,7 +209,7 @@ function NotCheckedIn() {
         <h1 className="text-3xl font-extrabold">
           Your <span className="text-gradient">night</span>
         </h1>
-        <p className="mt-1 text-muted">Check in at a venue to join the rotation, spin Song Roulette and see who's in the room.</p>
+        <p className="mt-1 text-muted">Check in at a venue to send songs to the KJ, spin Song Roulette and see who's in the room.</p>
       </div>
       <Card className="flex flex-wrap items-center gap-4 p-5">
         <div className="text-4xl">📍</div>

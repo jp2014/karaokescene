@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Avatar, type CardUser } from './Avatar';
 import { Button } from './ui';
 
-export const qrUrl = (kind: 'u' | 'v', key: string) => `${window.location.origin}/q/${kind}/${key}`;
+export const qrUrl = (kind: 'u' | 'v' | 'c', key: string) => `${window.location.origin}/q/${kind}/${key}`;
 
 /**
  * A scannable QR card. The code is a plain URL, so any phone camera opens it; inside

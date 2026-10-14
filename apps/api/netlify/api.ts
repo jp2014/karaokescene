@@ -22,12 +22,25 @@ type Store = ReturnType<typeof getStore>;
 
 // Imported lazily so DATABASE_URL is set before the db client reads it.
 async function init() {
-  const [{ db, dbFile, migrateDb, reopenDb }, { seed }, { clock }, { app }] = await Promise.all([
+  const [{ db, dbFile, migrateDb, reopenDb }, { seed }, { clock }, { app }, { media, contentTypeOf }] = await Promise.all([
     import('../src/db/client.ts'),
     import('../src/seed/seed.ts'),
     import('../src/lib/clock.ts'),
     import('../src/app.ts'),
+    import('../src/lib/media.ts'),
   ]);
+  // Uploads go to their own Blobs store, never into the database file.
+  const files = getStore({ name: 'media', consistency: 'strong' });
+  media.use({
+    async put(key, body, contentType) {
+      await files.set(key, body as Uint8Array<ArrayBuffer>, { metadata: { contentType } });
+    },
+    async get(key) {
+      const file = await files.getWithMetadata(key, { type: 'arrayBuffer' });
+      if (!file) return null;
+      return { body: new Uint8Array(file.data), contentType: (file.metadata.contentType as string | undefined) ?? contentTypeOf(key) };
+    },
+  });
   // Bundling moves this file, so find the included migrations folder at runtime.
   const migrations = [resolve(process.cwd(), 'apps/api/drizzle'), resolve(process.cwd(), 'drizzle')].find(existsSync);
 
@@ -87,6 +100,8 @@ async function init() {
   // One request at a time per instance, so pull → handle → push never interleaves.
   let queue: Promise<unknown> = Promise.resolve();
   return (req: Request) => {
+    // Reading uploads never touches the database: skip the sync queue.
+    if (req.method === 'GET' && new URL(req.url).pathname.startsWith('/api/media/')) return app.fetch(req);
     const run = queue.then(() => handle(req));
     queue = run.catch(() => {});
     return run;

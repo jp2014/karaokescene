@@ -1,16 +1,18 @@
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Award, CalendarPlus, Crown, ExternalLink, Martini, Star, Trash2, Trophy } from 'lucide-react';
+import { Award, CalendarPlus, Crown, ExternalLink, Lock, Martini, Megaphone, Star, Ticket, Trash2, Trophy, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar } from '~/components/Avatar';
+import { PremiumGate, PremiumPill, UpgradeSheet } from '~/components/Premium';
 import { BadgeMedal } from '~/components/Badge';
 import { QrCard } from '~/components/QrCard';
-import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Segmented, Stat, Toggle } from '~/components/ui';
+import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Segmented, Sheet, Stat, Toggle } from '~/components/ui';
 import { GalleryTile } from '~/components/VenueArt';
 import { PeakHours } from '~/features/venue/PeakHours';
 import { AwardBadgeSheet } from '~/features/profile/ProfileActions';
 import { AutoPostCard } from '~/features/promo/AutoPostCard';
 import { api, unwrap } from '~/lib/api';
-import { dateLabel, DAYS, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
+import { ago, dateLabel, DAYS, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
 
 export function VenueHqPage() {
@@ -24,11 +26,8 @@ export function VenueHqPage() {
 function Hq({ d }: { d: VenueDetail }) {
   const v = d.venue;
   const [awardTo, setAwardTo] = useState<{ id: string; displayName: string; handle: string } | null>(null);
+  const [plan, setPlan] = useState(false);
   const inv = [qk.venue(v.slug), ['venues'], qk.events];
-  const premiere = useAction((isPremiere: boolean) => unwrap(api.venues[':venueId'].$patch({ param: { venueId: v.id }, json: { isPremiere } })), {
-    invalidate: inv,
-    success: (_, on) => (on ? 'You are now a Premiere Partner ⭐ Priority listing is on.' : 'Premiere Partner turned off'),
-  });
   const feature = useAction((x: { id: string; on: boolean }) => unwrap(api.venues.gallery[':itemId'].featured.$put({ param: { itemId: x.id }, json: { on: x.on } })), { invalidate: inv });
   const nowHour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: SCENE_TZ }).format(new Date(serverNow())));
 
@@ -48,8 +47,8 @@ function Hq({ d }: { d: VenueDetail }) {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Checked in now" value={d.crowd.count} sub={d.crowd.level.replace('-', ' ')} accent="text-live" />
-        <Stat label="Going today" value={d.whosGoing[0]?.count ?? 0} sub="RSVPs" />
-        <Stat label="Going this week" value={d.whosGoing.reduce((n, x) => n + x.count, 0)} />
+        <Stat label="Going today" value={d.whosGoing ? d.whosGoing[0]?.count ?? 0 : <Lock className="mt-2 size-6 text-gold" />} sub={d.whosGoing ? 'RSVPs' : 'Venue Premier'} />
+        <Stat label="Going this week" value={d.whosGoing ? d.whosGoing.reduce((n, x) => n + x.count, 0) : <Lock className="mt-2 size-6 text-gold" />} sub={d.whosGoing ? undefined : 'Venue Premier'} />
         <Stat
           label="KJ on-site"
           value={d.kjNow ? <LiveDot className="mt-2" /> : '—'}
@@ -64,12 +63,17 @@ function Hq({ d }: { d: VenueDetail }) {
             <Crown className="size-6" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">Premiere Partner</div>
-            <div className="text-sm text-muted">Priority placement on the map and in lists, a gold star on your pin, and featured events. $49/mo (mocked).</div>
+            <div className="font-semibold">{v.isPremiere ? 'You’re on Venue Premier' : 'Venue Premier'}</div>
+            <div className="text-sm text-muted">Premier listing (priority on the map, gold pin), who's going on your page, Peak Hours insights and Drink Special Auto Post. $49/mo.</div>
           </div>
-          <Toggle on={v.isPremiere} onChange={(on) => premiere.mutate(on)} label="Premiere Partner" />
+          <Button variant={v.isPremiere ? 'secondary' : 'primary'} onClick={() => setPlan(true)}>
+            {v.isPremiere ? 'Manage plan' : 'Upgrade'}
+          </Button>
         </div>
       </Card>
+      <UpgradeSheet open={plan} onClose={() => setPlan(false)} />
+
+      <RewardSingers d={d} />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <EventsManager d={d} />
@@ -111,10 +115,10 @@ function Hq({ d }: { d: VenueDetail }) {
               ))}
             </div>
           </Section>
-          <Section title="Peak hours">
-            <Card className="p-5">
-              <PeakHours data={d.peakHours} currentHour={nowHour} />
-            </Card>
+          <Section title="Peak hours" action={<PremiumPill role="venue" />}>
+            <PremiumGate feature="Peak Hours" blurb="See when your room fills up, from real check-ins." teaser={!!d.peakHours}>
+              <Card className="p-5">{d.peakHours ? <PeakHours data={d.peakHours} currentHour={nowHour} /> : null}</Card>
+            </PremiumGate>
           </Section>
         </div>
         <aside className="space-y-6">
@@ -202,10 +206,12 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
   const [price, setPrice] = useState('');
   const [details, setDetails] = useState('');
   const [days, setDays] = useState<number[]>([5, 6]);
-  const inv = [qk.venue(d.venue.slug), ['venues']];
-  const create = useAction(() => unwrap(api.venues[':venueId'].specials.$post({ param: { venueId: d.venue.id }, json: { title, price, details, days } })), {
+  const [autoPost, setAutoPost] = useState(d.venue.isPremiere);
+  const [plan, setPlan] = useState(false);
+  const inv = [qk.venue(d.venue.slug), ['venues'], ['posts']];
+  const create = useAction(() => unwrap(api.venues[':venueId'].specials.$post({ param: { venueId: d.venue.id }, json: { title, price, details, days, autoPost: autoPost && d.venue.isPremiere } })), {
     invalidate: inv,
-    success: 'Special posted 🍹',
+    success: (r) => (r.autoPosts ? `Special posted 🍹 Auto-posting on ${r.autoPosts} day${r.autoPosts === 1 ? '' : 's'} this week` : 'Special posted 🍹'),
     onSuccess: () => {
       setTitle('');
       setPrice('');
@@ -221,6 +227,20 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
           <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="$3" className="w-20" />
         </div>
         <input value={details} onChange={(e) => setDetails(e.target.value)} placeholder="Details (optional)" className="w-full text-sm" />
+        <div className="flex items-center gap-3 rounded-2xl border border-line px-3 py-2 text-sm">
+          <Megaphone className="size-4 shrink-0 text-pink" />
+          <span className="flex-1">
+            Auto-post on each of its days <span className="text-xs text-muted">(Facebook, Instagram, Karaoke Scene)</span>
+          </span>
+          {d.venue.isPremiere ? (
+            <Toggle on={autoPost} onChange={setAutoPost} label="Auto-post this special" />
+          ) : (
+            <button onClick={() => setPlan(true)} className="flex items-center gap-1 text-xs font-semibold text-gold">
+              <Lock className="size-3.5" /> Premier
+            </button>
+          )}
+        </div>
+        <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Drink Special Auto Post" />
         <div className="flex flex-wrap items-center gap-1.5">
           {DAYS.map((day, i) => (
             <button key={day} onClick={() => setDays(days.includes(i) ? days.filter((x) => x !== i) : [...days, i])} className={cx('h-8 w-11 rounded-full text-xs font-semibold', days.includes(i) ? 'bg-gold text-ink' : 'bg-surface-2 text-muted')}>
@@ -238,7 +258,10 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
             <div className="grid min-w-12 place-items-center rounded-xl bg-gold/15 px-2 py-1.5 font-display font-bold text-gold">{s.price || '★'}</div>
             <div className="min-w-0 flex-1">
               <div className="truncate font-semibold">{s.title}</div>
-              <div className="text-xs text-muted">{s.days.map((x) => DAYS[x]).join(' · ')}</div>
+              <div className="text-xs text-muted">
+                {s.days.map((x) => DAYS[x]).join(' · ')}
+                {s.autoPost && <span className="text-pink"> · auto-posting</span>}
+              </div>
             </div>
             <button onClick={() => del.mutate(s.id)} className="text-faint hover:text-danger" aria-label="Delete">
               <Trash2 className="size-4" />
@@ -247,5 +270,88 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
         ))}
       </div>
     </Section>
+  );
+}
+
+/** Venues reward singers with one-time coupons that land in the singer's wallet. */
+function RewardSingers({ d }: { d: VenueDetail }) {
+  const issued = useQuery({ queryKey: ['issued'], queryFn: () => unwrap(api.wallet.issued.$get()) });
+  const [to, setTo] = useState<VenueDetail['here'][number] | null>(null);
+  const singers = d.here.filter((u) => u.role === 'singer' && !u.ghost);
+  return (
+    <div className="grid gap-8 [&>*]:min-w-0 lg:grid-cols-2">
+      <Section title="Reward singers" icon={<Ticket className="size-5 text-gold" />}>
+        <p className="-mt-1 text-sm text-muted">Send a coupon to someone in the room. It lands in their wallet as a one-time QR code you scan at the bar.</p>
+        {singers.length ? (
+          <Card className="max-h-80 overflow-y-auto p-2">
+            {singers.map((u) => (
+              <div key={u.id} className="flex items-center gap-3 rounded-2xl p-2 hover:bg-white/[0.03]">
+                <Avatar user={u} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{u.displayName}</div>
+                  <div className="text-xs text-muted">here {ago(u.checkedInAt)}</div>
+                </div>
+                <Button size="sm" className="border-gold/40 text-gold" onClick={() => setTo(u)}>
+                  <Ticket className="size-4" /> Coupon
+                </Button>
+              </div>
+            ))}
+          </Card>
+        ) : (
+          <EmptyState icon={<Users />} title="Nobody checked in right now" body="Singers who check in show up here." />
+        )}
+      </Section>
+      <Section title="Coupons sent">
+        <Card className="max-h-80 divide-y divide-line overflow-y-auto">
+          {issued.data?.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              {c.singer && <Avatar user={c.singer} size="xs" />}
+              <span className="min-w-0 flex-1 truncate">
+                <b>{c.title}</b> <span className="text-muted">· {c.singer?.displayName}</span>
+              </span>
+              <Pill tone={c.status === 'active' ? 'gold' : c.status === 'redeemed' ? 'live' : 'muted'}>{c.status}</Pill>
+            </div>
+          ))}
+          {!issued.data?.length && <p className="p-4 text-sm text-muted">No coupons sent yet.</p>}
+        </Card>
+      </Section>
+      {to && <CouponSheet d={d} to={to} onClose={() => setTo(null)} />}
+    </div>
+  );
+}
+
+const COUPON_IDEAS = ['Free well drink', '$5 off your tab', 'Free appetizer', 'Skip-the-line song'];
+
+function CouponSheet({ d, to, onClose }: { d: VenueDetail; to: { id: string; displayName: string }; onClose: () => void }) {
+  const [title, setTitle] = useState(COUPON_IDEAS[0]);
+  const [details, setDetails] = useState('');
+  const [validDays, setValidDays] = useState('14');
+  const send = useAction(() => unwrap(api.wallet.coupons.$post({ json: { singerId: to.id, title, details, validDays: Number(validDays) } })), {
+    invalidate: [['issued']],
+    success: `Coupon sent to ${to.displayName.split(' ')[0]} 🎟️`,
+    onSuccess: onClose,
+  });
+  return (
+    <Sheet open onClose={onClose} title={`Coupon for ${to.displayName.split(' ')[0]}`}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-1.5">
+          {COUPON_IDEAS.map((idea) => (
+            <button key={idea} onClick={() => setTitle(idea)} className={cx('rounded-full border px-3 py-1.5 text-xs font-semibold', title === idea ? 'border-gold bg-gold/15' : 'border-line text-muted')}>
+              {idea}
+            </button>
+          ))}
+        </div>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="Coupon" className="w-full" />
+        <input value={details} onChange={(e) => setDetails(e.target.value)} maxLength={160} placeholder={`Thanks for singing at ${d.venue.name}!`} className="w-full text-sm" />
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-muted">Valid for</span>
+          <Segmented size="sm" value={validDays} onChange={setValidDays} options={[{ value: '7', label: '1 week' }, { value: '14', label: '2 weeks' }, { value: '30', label: '30 days' }]} />
+        </div>
+        <Button variant="primary" className="w-full" disabled={title.trim().length < 2} loading={send.isPending} onClick={() => send.mutate(undefined)}>
+          <Ticket className="size-4" /> Send coupon
+        </Button>
+        <p className="text-center text-xs text-faint">One-time use. Redeem it by scanning their QR in Scan & Share.</p>
+      </div>
+    </Sheet>
   );
 }

@@ -5,7 +5,8 @@ import { useState } from 'react';
 import { Button, Card, cx, Pill } from '~/components/ui';
 import { api, unwrap } from '~/lib/api';
 import { dayTimeLabel, serverNow } from '~/lib/format';
-import { qk, useAction, useMe } from '~/lib/queries';
+import { PLANS, UpgradeSheet } from '~/components/Premium';
+import { useAction, useMe } from '~/lib/queries';
 
 type Network = 'facebook' | 'instagram' | 'karaokescene';
 const NETS: { key: Network; label: string; icon: typeof Facebook | null; pro: boolean }[] = [
@@ -45,7 +46,7 @@ export function AutoPostCard({ venues, defaultVenueId }: { venues: { id: string;
       },
     },
   );
-  const upgrade = useAction(() => unwrap(api.promo.upgrade.$post()), { invalidate: [qk.me], success: 'Pro unlocked ✨ Auto-post everywhere.' });
+  const [plan, setPlan] = useState(false);
 
   return (
     <Card className="p-5">
@@ -53,7 +54,7 @@ export function AutoPostCard({ venues, defaultVenueId }: { venues: { id: string;
         <div className="flex items-center gap-2 font-semibold">
           <Megaphone className="size-4 text-pink" /> Auto-Posting
         </div>
-        {pro ? <Pill tone="gold">Pro</Pill> : <Pill tone="muted">Free</Pill>}
+        {pro ? <Pill tone="gold">{me ? PLANS[me.role].name : 'Pro'}</Pill> : <Pill tone="muted">Free</Pill>}
       </div>
       <div className="mt-3 space-y-3">
         {venues.length > 1 && (
@@ -92,13 +93,14 @@ export function AutoPostCard({ venues, defaultVenueId }: { venues: { id: string;
           </Button>
         </div>
         {!pro && (
-          <button onClick={() => upgrade.mutate(undefined)} className="flex w-full items-center gap-2 rounded-2xl border border-gold/30 bg-gold/5 p-3 text-left text-xs">
+          <button onClick={() => setPlan(true)} className="flex w-full items-center gap-2 rounded-2xl border border-gold/30 bg-gold/5 p-3 text-left text-xs">
             <Sparkles className="size-4 shrink-0 text-gold" />
             <span className="flex-1">
-              <b className="text-gold">Go Pro ($9/mo)</b> to auto-post to Facebook & Instagram every week.
+              <b className="text-gold">{me ? PLANS[me.role].name : 'Upgrade'}</b> to auto-post to Facebook & Instagram.
             </span>
           </button>
         )}
+        <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Auto social posting" />
       </div>
       {!!posts.data?.length && (
         <div className="mt-4 space-y-2 border-t border-line pt-4">

@@ -1,19 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Ban, Check, Heart, Search, UserPlus, X } from 'lucide-react';
+import { Ban, Check, Heart, Megaphone, PartyPopper, Radar, Search, UserPlus, X } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
-import { UserRow } from '~/components/Avatar';
-import { Button, Card, EmptyState, PageLoader, Section, Segmented } from '~/components/ui';
+import { Avatar, UserRow } from '~/components/Avatar';
+import { Button, Card, cx, EmptyState, PageLoader, Pill, Section, Segmented, Sheet } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
+import { DAYS } from '~/lib/format';
 import { useLocation } from '~/lib/location';
-import { qk, useAction, useCircle } from '~/lib/queries';
+import { qk, useAction, useCircle, useMe, useVenues, type VenueSummary } from '~/lib/queries';
 
 type Tab = 'friends' | 'find' | 'favorites' | 'blocked';
 
+/** Singers get their people; KJs and venues get Singers Near You with a "Promote tonight" button. */
 export function FriendsPage() {
+  const { data: me } = useMe();
+  if (!me) return <PageLoader />;
+  return me.role === 'singer' ? <SingerFriends /> : <SingersNearYou />;
+}
+
+function SingerFriends() {
   const { data: c, isLoading } = useCircle();
   const [tab, setTab] = useState<Tab>('friends');
+  const [inviting, setInviting] = useState(false);
   const inv = [qk.circle, ['profile']];
   const respond = useAction((x: { id: string; accept: boolean }) => unwrap(api.social.friends[':userId'].respond.$post({ param: { userId: x.id }, json: { accept: x.accept } })), {
     invalidate: inv,
@@ -43,9 +52,23 @@ export function FriendsPage() {
 
       {tab === 'friends' && (
         <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
-          <Card className="p-2">
-            {c.friends.length ? c.friends.map((f) => <UserRow key={f.id} user={f} />) : <EmptyState icon="👋" title="No friends yet" body="Scan someone's QR card at a show, or find them by name." />}
-          </Card>
+          <div className="space-y-3">
+            {c.friends.length > 0 && (
+              <Card className="flex items-center gap-3 border-pink/30 bg-pink/5 p-4">
+                <PartyPopper className="size-6 shrink-0 text-pink" />
+                <div className="min-w-0 flex-1 text-sm">
+                  <div className="font-semibold">Invite friends out</div>
+                  <div className="text-muted">Pick a night and a venue. They get an invite and can say they're going.</div>
+                </div>
+                <Button variant="primary" size="sm" onClick={() => setInviting(true)}>
+                  Invite out
+                </Button>
+              </Card>
+            )}
+            <Card className="p-2">
+              {c.friends.length ? c.friends.map((f) => <UserRow key={f.id} user={f} />) : <EmptyState icon="👋" title="No friends yet" body="Scan someone's QR card at a show, or find them by name." />}
+            </Card>
+          </div>
           <div className="space-y-6">
             {c.incoming.length > 0 && (
               <Section title={`Requests · ${c.incoming.length}`}>
@@ -128,6 +151,117 @@ export function FriendsPage() {
           )}
         </Card>
       )}
+      <InviteOutSheet open={inviting} onClose={() => setInviting(false)} friends={c.friends} />
+    </div>
+  );
+}
+
+function InviteOutSheet({ open, onClose, friends }: { open: boolean; onClose: () => void; friends: { id: string; displayName: string; handle: string; role: 'singer' | 'kj' | 'venue'; avatarHue: number; avatarEmoji: string; avatarUrl?: string | null }[] }) {
+  const loc = useLocation();
+  const { data } = useVenues({ lat: loc.current.lat, lng: loc.current.lng, radiusMi: 20 });
+  const [picked, setPicked] = useState<string[]>([]);
+  const [dayOffset, setDayOffset] = useState(0);
+  const [venueId, setVenueId] = useState<string>();
+  const date = new Date(Date.now() + dayOffset * 86_400_000);
+  const dateStr = date.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  // Venues with karaoke on the chosen day: tonight's list for today, otherwise next-night matches.
+  const options: VenueSummary[] = (data?.venues ?? []).filter((v) => (dayOffset === 0 ? !!v.tonight : v.nextNight?.dayOfWeek === date.getDay() || !!v.tonight)).slice(0, 12);
+  const venue = options.find((v) => v.id === venueId) ?? options[0];
+  const send = useAction(() => unwrap(api.social.invites.$post({ json: { friendIds: picked, venueId: venue!.id, date: dateStr } })), {
+    invalidate: [['venue']],
+    success: (r) => `Invite sent to ${r.sent} friend${r.sent === 1 ? '' : 's'} 🎉`,
+    onSuccess: () => {
+      setPicked([]);
+      onClose();
+    },
+  });
+  return (
+    <Sheet open={open} onClose={onClose} title="Invite friends out">
+      <div className="space-y-5">
+        <div>
+          <div className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">When</div>
+          <Segmented size="sm" value={String(dayOffset)} onChange={(v) => setDayOffset(Number(v))} options={[0, 1, 2, 3].map((d) => ({ value: String(d), label: d === 0 ? 'Tonight' : d === 1 ? 'Tomorrow' : DAYS[(date.getDay() - dayOffset + d + 7) % 7] }))} />
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Where</div>
+          <div className="grid max-h-48 gap-1.5 overflow-y-auto">
+            {options.map((v) => (
+              <button key={v.id} onClick={() => setVenueId(v.id)} className={cx('flex items-center gap-3 rounded-2xl border p-2 text-left', venue?.id === v.id ? 'border-pink bg-pink/10' : 'border-line')}>
+                <VenueArt name={v.name} hue={v.hue} photoUrl={v.photoUrl} className="size-9 shrink-0 rounded-lg" />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{v.name}</span>
+                <span className="text-xs text-muted">{v.distanceMi} mi</span>
+              </button>
+            ))}
+            {!options.length && <p className="text-sm text-muted">No karaoke nights found for that day nearby.</p>}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">Who · {picked.length} picked</div>
+          <div className="flex flex-wrap gap-2">
+            {friends.map((f) => {
+              const on = picked.includes(f.id);
+              return (
+                <button key={f.id} onClick={() => setPicked(on ? picked.filter((x) => x !== f.id) : [...picked, f.id])} className={cx('flex items-center gap-2 rounded-full border py-1 pr-3 pl-1 text-sm', on ? 'border-pink bg-pink/15' : 'border-line')}>
+                  <Avatar user={f} size="xs" /> {f.displayName.split(' ')[0]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <Button variant="primary" className="w-full" disabled={!picked.length || !venue} loading={send.isPending} onClick={() => send.mutate(undefined)}>
+          <PartyPopper className="size-4" /> Send invite{picked.length > 1 ? 's' : ''}
+        </Button>
+        <p className="text-center text-xs text-faint">You'll be marked as going, so they can see you'll be there.</p>
+      </div>
+    </Sheet>
+  );
+}
+
+/** KJs and venues: who's out singing nearby, and a one-tap ping about tonight's show. */
+function SingersNearYou() {
+  const loc = useLocation();
+  const [radius, setRadius] = useState<'5' | '10' | '20'>('10');
+  const near = useQuery({
+    queryKey: ['singers-near', loc.current, radius],
+    queryFn: () => unwrap(api.presence['singers-near'].$get({ query: { lat: String(loc.current.lat), lng: String(loc.current.lng), radiusMi: radius } })),
+  });
+  const promote = useAction(() => unwrap(api.presence['promote-tonight'].$post({ json: { lat: loc.current.lat, lng: loc.current.lng, radiusMi: Number(radius) } })), {
+    success: (r) => (r.sent ? `Tonight's show sent to ${r.sent} singers nearby 📣` : `Everyone nearby already got tonight's ping (${r.skipped})`),
+  });
+  const out = near.data?.filter((u) => u.checkedInVenueId).length ?? 0;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold">
+            Singers <span className="text-gradient">near you</span>
+          </h1>
+          <p className="mt-1 text-muted">Singers within {radius} miles of {loc.label}. People in Ghost Mode never show up here.</p>
+        </div>
+        <Segmented value={radius} onChange={setRadius} options={[{ value: '5', label: '5 mi' }, { value: '10', label: '10 mi' }, { value: '20', label: '20 mi' }]} />
+      </div>
+      <Card glow="pink" className="flex flex-wrap items-center gap-4 border-pink/40 p-5">
+        <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-pink/15 text-pink">
+          <Megaphone className="size-6" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">Promote tonight</div>
+          <div className="text-sm text-muted">Send tonight's show to every singer within {radius} miles. Each singer gets it once per night.</div>
+        </div>
+        <Button variant="primary" loading={promote.isPending} onClick={() => promote.mutate(undefined)}>
+          <Megaphone className="size-4" /> Promote tonight
+        </Button>
+      </Card>
+      <div className="flex gap-3">
+        <Pill tone="cyan">
+          <Radar className="size-3" /> {near.data?.length ?? '…'} nearby
+        </Pill>
+        <Pill tone="live">{out} out singing now</Pill>
+      </div>
+      <Card className="p-2">
+        {near.data?.map((u) => <UserRow key={u.id} user={u} sub={`${u.distanceMi} mi away${u.checkedInVenueId ? ' · out singing now' : ''}`} />)}
+        {near.data?.length === 0 && <EmptyState icon="🌙" title="No one nearby" body="Try a bigger radius." />}
+      </Card>
     </div>
   );
 }

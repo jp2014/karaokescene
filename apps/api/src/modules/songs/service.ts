@@ -34,18 +34,29 @@ export const songCatalog = {
 };
 
 export const songLists = {
-  async forUser(userId: string) {
+  /** A singer's list. With `kjId`, each song says whether that KJ's songbook has it. */
+  async forUser(userId: string, kjId?: string) {
     const rows = await db
       .select({ song: S, isGoTo: L.isGoTo, addedAt: L.addedAt })
       .from(L)
       .innerJoin(S, eq(S.id, L.songId))
       .where(eq(L.userId, userId))
       .orderBy(desc(L.isGoTo), asc(S.artist));
-    return rows.map((r) => ({ ...r.song, isGoTo: r.isGoTo, addedAt: r.addedAt }));
+    const inBook = kjId && rows.length
+      ? new Set((await db.select({ id: SB.songId }).from(SB).where(and(eq(SB.kjId, kjId), inArray(SB.songId, rows.map((r) => r.song.id))))).map((r) => r.id))
+      : null;
+    return rows.map((r) => ({ ...r.song, isGoTo: r.isGoTo, addedAt: r.addedAt, inKjBook: inBook ? inBook.has(r.song.id) : null }));
   },
 
   async add(userId: string, songId: string) {
     await db.insert(L).values({ userId, songId, addedAt: clock.now() }).onConflictDoNothing();
+  },
+
+  /** Free add: any title + artist, even if no KJ's songbook has it yet. */
+  async addCustom(userId: string, title: string, artist: string) {
+    const song = await songCatalog.upsert(title.trim(), artist.trim());
+    await songLists.add(userId, song.id);
+    return song;
   },
 
   async remove(userId: string, songId: string) {

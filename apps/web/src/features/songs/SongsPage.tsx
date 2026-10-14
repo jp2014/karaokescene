@@ -1,18 +1,76 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Lock, Plus, Search, Sparkles, Star, Trash2 } from 'lucide-react';
+import { BookOpen, PenLine, Plus, Search, Sparkles, Star, Trash2 } from 'lucide-react';
 import { useDeferredValue, useState } from 'react';
-import { Button, Card, cx, EmptyState, Pill, Section, Spinner } from '~/components/ui';
+import { Avatar } from '~/components/Avatar';
+import { PremiumGate } from '~/components/Premium';
+import { Button, Card, cx, EmptyState, Pill, Section, Spinner, Toggle } from '~/components/ui';
 import { api, unwrap } from '~/lib/api';
-import { qk, useAction, useMe, useMySongs } from '~/lib/queries';
+import { qk, useAction, useMe, useMyLive, useMySongs } from '~/lib/queries';
 import { SongRoulette } from './SongRoulette';
+
+/** Free Add: any song, even one no KJ has in their book yet. */
+function FreeAdd({ initialTitle }: { initialTitle: string }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [artist, setArtist] = useState('');
+  const add = useAction(() => unwrap(api.songs.mine.custom.$post({ json: { title, artist } })), {
+    invalidate: [qk.mySongs, ['recs']],
+    success: (s) => `Added “${s.title}” 🎶`,
+    onSuccess: () => {
+      setTitle('');
+      setArtist('');
+      setOpen(false);
+    },
+  });
+  if (!open)
+    return (
+      <button
+        onClick={() => {
+          setTitle(initialTitle);
+          setOpen(true);
+        }}
+        className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-line-strong px-4 py-3 text-left text-sm text-muted hover:text-fg"
+      >
+        <PenLine className="size-4" /> Can't find a song? Add any title and artist yourself
+      </button>
+    );
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <PenLine className="size-4 text-pink" /> Add any song
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Song title" className="min-w-40 flex-1" />
+        <input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="Artist" className="min-w-40 flex-1" />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1 text-xs text-faint">
+          <BookOpen className="size-3.5" /> KJs see it even if it's not in their book yet
+        </span>
+        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="primary" disabled={!title.trim() || !artist.trim()} loading={add.isPending} onClick={() => add.mutate(undefined)}>
+          <Plus className="size-4" /> Add
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
 export function SongsPage() {
   const { data: me } = useMe();
-  const { data: songs, isLoading } = useMySongs();
+  // On site with a live KJ? Filter to what's in their song book.
+  const { data: live } = useMyLive(!!me?.checkin);
+  const kj = live?.kj ?? null;
+  const [kjOnly, setKjOnly] = useState(true);
+  const filterKj = kj && kjOnly ? kj.id : undefined;
+  const { data: songs, isLoading } = useMySongs(kj?.id);
   const [q, setQ] = useState('');
   const dq = useDeferredValue(q);
-  const search = useQuery({ queryKey: ['song-search', dq], queryFn: () => unwrap(api.songs.search.$get({ query: { q: dq } })), enabled: dq.length > 1 });
+  const search = useQuery({ queryKey: ['song-search', dq, filterKj], queryFn: () => unwrap(api.songs.search.$get({ query: { q: dq, ...(filterKj ? { kjId: filterKj } : {}) } })), enabled: dq.length > 1 });
+  const shown = (songs ?? []).filter((s) => !filterKj || s.inKjBook !== false);
   const recs = useQuery({ queryKey: ['recs'], queryFn: () => unwrap(api.songs.recommendations.$get()) });
   const mine = new Set(songs?.map((s) => s.id));
   const inv = [qk.mySongs, ['recs']];
@@ -20,7 +78,6 @@ export function SongsPage() {
   const add = useAction((songId: string) => unwrap(api.songs.mine[':songId'].$put({ param: { songId } })), { invalidate: inv, success: 'Added to your list 🎶' });
   const remove = useAction((songId: string) => unwrap(api.songs.mine[':songId'].$delete({ param: { songId } })), { invalidate: inv });
   const goTo = useAction((x: { songId: string; on: boolean }) => unwrap(api.songs.mine[':songId']['go-to'].$put({ param: { songId: x.songId }, json: { on: x.on } })), { invalidate: inv });
-  const upgrade = useAction(() => unwrap(api.promo.upgrade.$post()), { invalidate: [qk.me, ['recs']], success: 'Welcome to Karaoke Scene Plus ✨' });
 
   return (
     <div className="space-y-8">
@@ -38,6 +95,16 @@ export function SongsPage() {
         </div>
         <Pill tone="violet">{songs?.length ?? 0} songs</Pill>
       </div>
+
+      {kj && live?.venue && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-cyan/30 bg-cyan/5 px-4 py-3 text-sm">
+          <Avatar user={kj} size="sm" />
+          <span className="min-w-0 flex-1">
+            You're at <b>{live.venue.name}</b> with {kj.displayName}. {kjOnly ? 'Showing only songs in their song book.' : 'Showing all songs.'}
+          </span>
+          <Toggle on={kjOnly} onChange={setKjOnly} label="Only this KJ's songs" />
+        </div>
+      )}
 
       <div className="grid gap-8 [&>*]:min-w-0 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -65,15 +132,16 @@ export function SongsPage() {
                   )}
                 </div>
               ))}
-              {search.data?.length === 0 && <div className="p-4 text-sm text-muted">No matches. KJs can add songs by importing their songbook.</div>}
+              {search.data?.length === 0 && <div className="p-4 text-sm text-muted">{filterKj ? `${kj?.displayName} doesn't have a match. Turn off the KJ filter, or add it below.` : 'No matches. Add it yourself below.'}</div>}
             </Card>
           )}
+          <FreeAdd initialTitle={dq} />
 
           {isLoading ? (
             <Spinner />
-          ) : songs?.length ? (
+          ) : shown.length ? (
             <Card className="divide-y divide-line">
-              {songs.map((s) => (
+              {shown.map((s) => (
                 <div key={s.id} className="group flex items-center gap-3 px-4 py-3">
                   <button onClick={() => goTo.mutate({ songId: s.id, on: !s.isGoTo })} aria-label="Toggle go-to song" title="Go-to song (KJs see these first)">
                     <Star className={cx('size-5 transition', s.isGoTo ? 'fill-gold text-gold' : 'text-faint hover:text-gold')} />
@@ -94,14 +162,15 @@ export function SongsPage() {
           ) : (
             <EmptyState icon="🎵" title="Your list is empty" body="Search above to add your go-to songs." />
           )}
-          <p className="text-xs text-faint">⭐ Go-to songs show up first when a KJ looks at you in their booth, so they can pull you into the rotation.</p>
+          {filterKj && (songs?.length ?? 0) > shown.length && <p className="text-xs text-muted">{(songs?.length ?? 0) - shown.length} of your songs aren't in {kj?.displayName}'s book tonight.</p>}
+          <p className="text-xs text-faint">⭐ Go-to songs show up first when a KJ looks at you in their booth, so they can add one for you in a tap.</p>
         </div>
 
         <aside className="space-y-6">
           <SongRoulette pool={songs ?? []} />
           <Section title="Recommended for you" icon={<Sparkles className="size-5 text-gold" />}>
-            <div className="relative">
-              <Card className={cx('divide-y divide-line', !me?.isPremium && 'pointer-events-none blur-[3px] select-none')}>
+            <PremiumGate feature="Smart song recommendations" blurb="Songs that fit your voice and crowd favorites near you.">
+              <Card className="divide-y divide-line">
                 {recs.data?.map((s) => (
                   <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
                     <div className="min-w-0 flex-1">
@@ -116,19 +185,7 @@ export function SongsPage() {
                   </div>
                 ))}
               </Card>
-              {!me?.isPremium && (
-                <div className="absolute inset-0 grid place-items-center">
-                  <div className="glass mx-4 rounded-3xl border border-gold/30 p-5 text-center">
-                    <Lock className="mx-auto size-6 text-gold" />
-                    <div className="mt-2 font-semibold">Smart recommendations</div>
-                    <p className="mt-1 text-sm text-muted">Songs that fit your voice and crowd favorites near you.</p>
-                    <Button variant="primary" size="sm" className="mt-3" loading={upgrade.isPending} onClick={() => upgrade.mutate(undefined)}>
-                      Unlock with Plus · $2.99/mo
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+            </PremiumGate>
           </Section>
         </aside>
       </div>
