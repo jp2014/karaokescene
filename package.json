@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.21.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @ks/api --filter @ks/web dev",
     "build": "pnpm --filter @ks/web build",
@@ -11,5 +13,8 @@
     "typecheck": "pnpm -r typecheck",
     "db:reset": "pnpm --filter @ks/api db:reset",
     "db:generate": "pnpm --filter @ks/api db:generate"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
   }
 }

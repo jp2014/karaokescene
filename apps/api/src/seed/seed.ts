@@ -204,7 +204,8 @@ export async function seed() {
     for (const n of nights.filter((x) => x.dayOfWeek === dow)) {
       const venue = VENUES.find((v) => `ven_${v.slug}` === n.venueId) ?? { capacity: 60 };
       const crowd = Math.floor((venue.capacity / 8) * (0.6 + r() * 0.8) * (dow === 5 || dow === 6 ? 1.4 : 1));
-      for (const userId of sample(singerIds, Math.min(crowd, singerIds.length))) {
+      // Jess's history is scripted below so her Regular status tells a clear story.
+      for (const userId of sample(singerIds.slice(1), Math.min(crowd, singerIds.length - 1))) {
         // Arrivals cluster around 1.5h after start (peak), departures 1-3h later.
         const arrive = n.startMin + Math.max(0, Math.round(90 + jitter(150)));
         const stay = 60 + Math.floor(r() * 120);
@@ -333,7 +334,7 @@ export async function seed() {
   }
   // KJs praise singers too, which is what venues see in their feed.
   for (let i = 0; i < 10; i++) {
-    const [emoji, message] = pick(PRAISE_LINES);
+    const [emoji, message] = PRAISE_LINES[i % PRAISE_LINES.length];
     praise.push({ id: newId('prs'), fromId: i < 6 ? DEMO_USERS.kj : `usr_${pick(KJS).handle}`, toId: i === 0 ? DEMO_USERS.singer : pick(singerIds), emoji, message, venueId: 'ven_neon-mic', songId: null, createdAt: now - Math.floor(r() * 10 * 24 * 60) * 60_000 });
   }
   await db.insert(schema.praise).values(praise);
