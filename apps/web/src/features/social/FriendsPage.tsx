@@ -244,7 +244,7 @@ function SingersNearYou() {
         <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-pink/15 text-pink">
           <Megaphone className="size-6" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-48 flex-1">
           <div className="font-semibold">Promote tonight</div>
           <div className="text-sm text-muted">Send tonight's show to every singer within {radius} miles. Each singer gets it once per night.</div>
         </div>

@@ -14,5 +14,8 @@
     "typecheck": "pnpm -r typecheck",
     "db:reset": "pnpm --filter @ks/api db:reset",
     "db:generate": "pnpm --filter @ks/api db:generate"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
   }
 }

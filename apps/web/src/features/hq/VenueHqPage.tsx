@@ -63,7 +63,7 @@ function Hq({ d }: { d: VenueDetail }) {
           <div className="grid size-12 place-items-center rounded-2xl bg-gold/15 text-gold">
             <Crown className="size-6" />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-48 flex-1">
             <div className="font-semibold">{v.isPremiere ? 'You’re on Venue Premier' : 'Venue Premier'}</div>
             <div className="text-sm text-muted">Premier listing (priority on the map, gold pin), who's going on your page, Peak Hours insights and Drink Special Auto Post. $49/mo.</div>
           </div>
@@ -76,7 +76,7 @@ function Hq({ d }: { d: VenueDetail }) {
 
       <RewardSingers d={d} />
 
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid gap-8 [&>*]:min-w-0 lg:grid-cols-2">
         <EventsManager d={d} />
         <SpecialsManager d={d} />
       </div>
