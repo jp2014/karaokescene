@@ -1,13 +1,23 @@
 import { Link } from '@tanstack/react-router';
 import { cx } from './ui';
 
-export type CardUser = { id: string; handle: string; displayName: string; role: 'singer' | 'kj' | 'venue'; avatarHue: number; avatarEmoji: string; isPro?: boolean };
+export type CardUser = { id: string; handle: string; displayName: string; role: 'singer' | 'kj' | 'venue'; avatarHue: number; avatarEmoji: string; avatarUrl?: string | null; isPro?: boolean };
 
 const SIZES = { xs: 'size-6 text-xs', sm: 'size-8 text-sm', md: 'size-10 text-lg', lg: 'size-14 text-2xl', xl: 'size-24 text-5xl' };
 
-/** Generated avatar: a hue-shifted gradient orb with the person's emoji. */
-export function Avatar({ user, size = 'md', ring, ghost, className }: { user: Pick<CardUser, 'avatarHue' | 'avatarEmoji' | 'displayName' | 'role'>; size?: keyof typeof SIZES; ring?: boolean; ghost?: boolean; className?: string }) {
+/** The person's uploaded photo, or a generated hue-shifted gradient orb with their emoji. */
+export function Avatar({ user, size = 'md', ring, ghost, className }: { user: Pick<CardUser, 'avatarHue' | 'avatarEmoji' | 'displayName' | 'role'> & { avatarUrl?: string | null }; size?: keyof typeof SIZES; ring?: boolean; ghost?: boolean; className?: string }) {
   const h = user.avatarHue;
+  if (user.avatarUrl && !ghost) {
+    return (
+      <img
+        src={user.avatarUrl}
+        alt={user.displayName}
+        title={user.displayName}
+        className={cx('shrink-0 object-cover select-none', user.role === 'venue' ? 'rounded-[30%]' : 'rounded-full', SIZES[size], ring && 'ring-2 ring-ink', className)}
+      />
+    );
+  }
   return (
     <span
       title={user.displayName}

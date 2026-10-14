@@ -3,7 +3,7 @@ import { db, schema } from '../db/client.ts';
 import type { User } from './context.ts';
 
 /** The minimal, always-public projection of a user used across every list in the app. */
-export type UserCard = Pick<User, 'id' | 'handle' | 'displayName' | 'role' | 'avatarHue' | 'avatarEmoji' | 'isPro'>;
+export type UserCard = Pick<User, 'id' | 'handle' | 'displayName' | 'role' | 'avatarHue' | 'avatarEmoji' | 'avatarUrl' | 'isPro'>;
 
 export const toCard = (u: User): UserCard => ({
   id: u.id,
@@ -12,6 +12,7 @@ export const toCard = (u: User): UserCard => ({
   role: u.role,
   avatarHue: u.avatarHue,
   avatarEmoji: u.avatarEmoji,
+  avatarUrl: u.avatarUrl,
   isPro: u.isPro,
 });
 

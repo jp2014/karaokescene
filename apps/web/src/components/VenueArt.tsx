@@ -1,7 +1,14 @@
 import { cx } from './ui';
 
 /** Generative cover art for a venue: neon gradient with a big monogram, unique per hue. */
-export function VenueArt({ name, hue, className, big }: { name: string; hue: number; className?: string; big?: boolean }) {
+export function VenueArt({ name, hue, className, big, photoUrl }: { name: string; hue: number; className?: string; big?: boolean; photoUrl?: string | null }) {
+  if (photoUrl) {
+    return (
+      <div className={cx('overflow-hidden bg-surface-2', !/\b(absolute|fixed)\b/.test(className ?? '') && 'relative', className)}>
+        <img src={photoUrl} alt={name} className="absolute inset-0 size-full object-cover" />
+      </div>
+    );
+  }
   const initials = name.replace(/^The /, '').split(/\s+/).slice(0, 2).map((w) => w[0]).join('');
   return (
     <div

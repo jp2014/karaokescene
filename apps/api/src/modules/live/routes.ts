@@ -7,18 +7,18 @@ import { live } from './service.ts';
 export const liveRoutes = new Hono<AppEnv>()
   .get('/booth', async (c) => c.json(await live.booth(requireViewer(c, 'kj'))))
   .get('/mine', async (c) => c.json(await live.mine(requireViewer(c))))
-  .post('/requests', zValidator('json', z.object({ songId: z.string(), source: z.enum(['list', 'roulette', 'search']) })), async (c) => {
+  .post('/submissions', zValidator('json', z.object({ songId: z.string(), source: z.enum(['list', 'roulette', 'search']) })), async (c) => {
     const { songId, source } = c.req.valid('json');
-    return c.json(await live.request(requireViewer(c), songId, source));
+    return c.json(await live.submit(requireViewer(c), songId, source));
   })
-  .delete('/requests/:id', async (c) => {
-    await live.cancel(requireViewer(c), c.req.param('id'));
+  .delete('/submissions/:id', async (c) => {
+    await live.withdraw(requireViewer(c), c.req.param('id'));
     return c.json({ ok: true });
   })
-  .put('/requests/:id/status', zValidator('json', z.object({ status: z.enum(['queued', 'up', 'done', 'skipped']) })), async (c) =>
-    c.json(await live.setStatus(requireViewer(c, 'kj'), c.req.param('id'), c.req.valid('json').status)),
+  .put('/submissions/:id/decision', zValidator('json', z.object({ accept: z.boolean() })), async (c) =>
+    c.json(await live.decide(requireViewer(c, 'kj'), c.req.param('id'), c.req.valid('json').accept)),
   )
-  .post('/pull', zValidator('json', z.object({ singerId: z.string(), songId: z.string() })), async (c) => {
+  .post('/add-for-singer', zValidator('json', z.object({ singerId: z.string(), songId: z.string() })), async (c) => {
     const { singerId, songId } = c.req.valid('json');
-    return c.json(await live.pullFromList(requireViewer(c, 'kj'), singerId, songId));
+    return c.json(await live.addForSinger(requireViewer(c, 'kj'), singerId, songId));
   });

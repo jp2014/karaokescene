@@ -1,7 +1,7 @@
-import { Clock, Mic, Sparkles, PartyPopper, HeartHandshake, Users, Waves, Infinity as InfinityIcon, SprayCan, QrCode, Megaphone, Award, type LucideIcon } from 'lucide-react';
+import { Clock, Mic, Sparkles, PartyPopper, HeartHandshake, Users, Waves, Infinity as InfinityIcon, SprayCan, QrCode, Megaphone, Award, Flame, Smile, Scale, Volume2, BookOpen, Martini, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { cx } from './ui';
 
-const ICONS: Record<string, LucideIcon> = { Clock, Mic, Sparkles, PartyPopper, HeartHandshake, Users, Waves, Infinity: InfinityIcon, SprayCan, QrCode, Megaphone };
+const ICONS: Record<string, LucideIcon> = { Clock, Mic, Sparkles, PartyPopper, HeartHandshake, Users, Waves, Infinity: InfinityIcon, SprayCan, QrCode, Megaphone, Flame, Smile, Scale, Volume2, BookOpen, Martini, ShieldCheck };
 
 const TIER = {
   bronze: { ring: 'from-[#c98a5a] to-[#7a4a2a]', text: 'text-[#e8b48c]', label: 'Bronze' },

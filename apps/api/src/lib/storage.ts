@@ -30,3 +30,10 @@ export function supabaseStorage(cfg: SupabaseConfig): MediaStore {
     },
   };
 }
+
+/** Where `put` URLs start, so photo fields only accept files that went through our upload route. */
+const STORED_PREFIXES = () => {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  return url ? [`${url}/storage/v1/object/public/${BUCKET}/`, '/api/media/'] : ['/api/media/'];
+};
+export const isStoredMediaUrl = (url: string) => STORED_PREFIXES().some((p) => url.startsWith(p));

@@ -1,17 +1,21 @@
-import { Link, useParams, useRouter } from '@tanstack/react-router';
-import { ArrowLeft, CalendarDays, Camera, Check, Heart, LogOut, MapPin, Martini, QrCode, Settings2, Share2, Star, Trophy, Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Award, BadgeCheck, CalendarDays, Camera, Check, Clock, FileText, Heart, LogOut, MapPin, Martini, QrCode, Settings2, Share2, Star, Trophy, Users, UtensilsCrossed } from 'lucide-react';
+import { useState } from 'react';
 import { Avatar, AvatarStack } from '~/components/Avatar';
-import { BadgeMedal } from '~/components/Badge';
+import { BadgeGrid, BadgeMedal } from '~/components/Badge';
+import { FilePicker } from '~/components/FilePicker';
+import { AwardBadgeSheet } from '~/features/profile/ProfileActions';
 import { BusyMeter } from '~/components/BusyMeter';
 import { QrCard, qrUrl } from '~/components/QrCard';
 import { ShareSheet } from '~/components/ShareSheet';
 import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Sheet } from '~/components/ui';
 import { GalleryTile, VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
-import { ago, DAYS, dateLabel, duration, hoursLabel, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
+import { ago, DAYS, DAYS_LONG, dateLabel, duration, hoursLabel, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
 import { useLiveQueries } from '~/lib/realtime';
+import { demoClaim } from '~/lib/demo';
 import { PeakHours } from './PeakHours';
 
 const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scene: 'cyan' } as const;
@@ -42,7 +46,7 @@ export function VenuePage() {
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-10 lg:-mt-10">
       {/* Hero */}
       <div className="relative h-72 overflow-hidden sm:h-80">
-        <VenueArt name={v.name} hue={v.hue} big className="absolute inset-0" />
+        <VenueArt name={v.name} hue={v.hue} photoUrl={v.photoUrl} big className="absolute inset-0" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-transparent" />
         <div className="absolute top-4 left-4 flex gap-2 sm:left-6 lg:left-10">
           <Button variant="secondary" size="icon" className="glass" onClick={() => router.history.back()} aria-label="Back">
@@ -60,14 +64,20 @@ export function VenuePage() {
             ) : null}
             {v.isPremiere && (
               <Pill tone="gold">
-                <Star className="size-3 fill-current" /> Premiere Partner
+                <Star className="size-3 fill-current" /> Premier
               </Pill>
             )}
+            {v.venueTypes.map((x) => (
+              <Pill key={x} tone="cyan">
+                {x}
+              </Pill>
+            ))}
             {v.vibes.map((x) => (
               <Pill key={x} tone="muted">
                 {x}
               </Pill>
             ))}
+            {me?.role === 'singer' && d.myVisits >= d.regularAfter && <Pill tone="gold">⭐ You're a Regular</Pill>}
           </div>
           <h1 className="mt-2 text-4xl font-extrabold sm:text-5xl">{v.name}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 text-sm text-muted">
@@ -117,20 +127,26 @@ export function VenuePage() {
           </Button>
         </div>
 
+        {!v.claimed && <ClaimBanner d={d} />}
+
         <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[1fr_340px]">
           <div className="space-y-8">
             <TonightCard d={d} tonight={tonight} />
             <WhosHere d={d} />
-            <WhosGoing d={d} />
-            <Section title="Peak hours" icon={<Users className="size-5 text-violet" />}>
-              <Card className="p-5">
-                <PeakHours data={d.peakHours} currentHour={nowHour} />
-              </Card>
-            </Section>
+            {d.whosGoing && <WhosGoing d={d} going={d.whosGoing} />}
+            {d.peakHours && (
+              <Section title="Peak hours" icon={<Users className="size-5 text-violet" />}>
+                <Card className="p-5">
+                  <PeakHours data={d.peakHours} currentHour={nowHour} />
+                </Card>
+              </Section>
+            )}
+            <Ratings d={d} />
             <Events d={d} />
             <Gallery d={d} />
           </div>
           <aside className="space-y-6">
+            <VenueInfo d={d} />
             <Specials d={d} />
             <Section title="Weekly karaoke" icon={<CalendarDays className="size-5 text-cyan" />}>
               <Card className="divide-y divide-line">
@@ -243,7 +259,7 @@ function WhosHere({ d }: { d: VenueDetail }) {
   );
 }
 
-function WhosGoing({ d }: { d: VenueDetail }) {
+function WhosGoing({ d, going }: { d: VenueDetail; going: NonNullable<VenueDetail['whosGoing']> }) {
   const { data: me } = useMe();
   const rsvp = useAction((x: { date: string; going: boolean }) => unwrap(api.venues[':venueId'].rsvp.$put({ param: { venueId: d.venue.id }, json: x })), {
     invalidate: [qk.venue(d.venue.slug)],
@@ -253,7 +269,7 @@ function WhosGoing({ d }: { d: VenueDetail }) {
   return (
     <Section title="Who's going" icon={<CalendarDays className="size-5 text-pink" />}>
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none sm:mx-0 sm:grid sm:grid-cols-7 sm:px-0">
-        {d.whosGoing.map((day, i) => {
+        {going.map((day, i) => {
           const date = new Date(`${day.date}T12:00:00`);
           const hasKaraoke = nightDays.has(date.getDay());
           return (
@@ -322,16 +338,14 @@ function Gallery({ d }: { d: VenueDetail }) {
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
-  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, form: { caption, file: file! } })), {
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, json: { caption: caption || 'Great night!', mediaUrl: mediaUrl! } })), {
     invalidate: [qk.venue(d.venue.slug)],
     success: 'Posted to the gallery',
     onSuccess: () => {
       setOpen(false);
       setCaption('');
-      setFile(null);
+      setMediaUrl(null);
     },
   });
   return (
@@ -354,25 +368,136 @@ function Gallery({ d }: { d: VenueDetail }) {
       <p className="text-xs text-faint">Curated by {d.venue.name}. Featured shots float to the top. Last upload {d.gallery[0] ? ago(d.gallery[0].createdAt) : 'n/a'}.</p>
       <Sheet open={open} onClose={() => setOpen(false)} title="Add to the gallery">
         <div className="space-y-4">
-          <label className="relative grid aspect-video cursor-pointer place-items-center overflow-hidden rounded-2xl border border-dashed border-line-strong bg-surface-2/50 text-center text-sm text-muted">
-            {preview && file?.type.startsWith('video/') ? (
-              <video src={preview} className="absolute inset-0 size-full object-cover" muted playsInline autoPlay loop />
-            ) : preview ? (
-              <img src={preview} alt="" className="absolute inset-0 size-full object-cover" />
+          <div className="relative grid aspect-video place-items-center overflow-hidden rounded-2xl border border-dashed border-line-strong bg-surface-2/50 text-center text-sm text-muted">
+            {mediaUrl ? (
+              <img src={mediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
             ) : (
-              <div>
-                <Camera className="mx-auto size-8" />
-                <div className="mt-2">Choose a photo or short video (10 MB max)</div>
-              </div>
+              <FilePicker variant="primary" capture="environment" onUploaded={setMediaUrl}>
+                <Camera className="size-4" /> Take or choose a photo
+              </FilePicker>
             )}
-            <input type="file" accept="image/*,video/*" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          </label>
+          </div>
           <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Caption (e.g. Bohemian Rhapsody group sing)" className="w-full" />
-          <Button variant="primary" className="w-full" disabled={!file} loading={add.isPending} onClick={() => add.mutate(undefined)}>
+          <Button variant="primary" className="w-full" disabled={!mediaUrl} loading={add.isPending} onClick={() => add.mutate(undefined)}>
             Post
           </Button>
         </div>
       </Sheet>
     </Section>
+  );
+}
+
+/** Hours, happy hours and food, from the venue's settings. */
+function VenueInfo({ d }: { d: VenueDetail }) {
+  const v = d.venue;
+  const today = new Date(serverNow()).toLocaleDateString('en-US', { weekday: 'long', timeZone: SCENE_TZ });
+  const todayIdx = DAYS_LONG.indexOf(today);
+  if (!v.hours.length && !v.happyHours.length && !v.foodAvailable) return null;
+  return (
+    <Section title="Hours & food" icon={<Clock className="size-5 text-violet" />}>
+      <Card className="divide-y divide-line text-sm">
+        {v.hours.length > 0 && (
+          <div className="space-y-1 px-4 py-3">
+            {DAYS.map((day, i) => {
+              const h = v.hours.find((x) => x.day === i);
+              return (
+                <div key={day} className={cx('flex justify-between', i === todayIdx ? 'font-semibold text-fg' : 'text-muted')}>
+                  <span>{day}</span>
+                  <span>{h ? hoursLabel(h.openMin, h.closeMin) : 'Closed'}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {v.happyHours.map((hh, i) => (
+          <div key={i} className="flex items-start gap-3 px-4 py-3">
+            <Martini className="mt-0.5 size-4 shrink-0 text-gold" />
+            <div>
+              <div className="font-semibold">Happy hour · {hoursLabel(hh.startMin, hh.endMin)}</div>
+              <div className="text-xs text-muted">
+                {hh.days.map((x) => DAYS[x]).join(' · ')}
+                {hh.details && ` · ${hh.details}`}
+              </div>
+            </div>
+          </div>
+        ))}
+        {v.foodAvailable && (
+          <div className="flex items-center gap-3 px-4 py-3">
+            <UtensilsCrossed className="size-4 shrink-0 text-gold" />
+            <span className="flex-1">Food available</span>
+            {v.menuUrl && (
+              <a href={v.menuUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs font-semibold text-pink">
+                <FileText className="size-3.5" /> Menu
+              </a>
+            )}
+          </div>
+        )}
+      </Card>
+    </Section>
+  );
+}
+
+/** Singers rate venues with positive badges only. */
+function Ratings({ d }: { d: VenueDetail }) {
+  const { data: me } = useMe();
+  const [rate, setRate] = useState(false);
+  const total = d.ratings.reduce((n, b) => n + b.count, 0);
+  return (
+    <Section
+      title={<>Singers say <span className="text-base font-medium text-muted">· {total}</span></>}
+      icon={<Award className="size-5 text-gold" />}
+      action={
+        me?.role === 'singer' && (
+          <Button size="sm" className="border-gold/40 text-gold" onClick={() => setRate(true)}>
+            <Award className="size-4" /> Rate this venue
+          </Button>
+        )
+      }
+    >
+      {d.ratings.length ? <BadgeGrid badges={d.ratings} /> : <p className="text-sm text-muted">No ratings yet. Singers rate venues with positive badges only.</p>}
+      {rate && <AwardBadgeSheet open onClose={() => setRate(false)} to={{ id: d.venue.ownerId, displayName: d.venue.name, handle: d.venue.ownerHandle ?? d.venue.slug }} />}
+    </Section>
+  );
+}
+
+/** A KJ listed this venue before its owner joined. Owners claim it to manage the page. */
+function ClaimBanner({ d }: { d: VenueDetail }) {
+  const { data: me } = useMe();
+  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const claim = useAction(() => demoClaim!(d.venue.id, qc), {
+    success: (r) => `You now manage ${r.displayName} 🎉`,
+    onSuccess: () => navigate({ to: '/me' }),
+  });
+  return (
+    <>
+      <Card className="mb-5 flex flex-wrap items-center gap-3 border-gold/40 bg-gold/5 p-4">
+        <BadgeCheck className="size-6 shrink-0 text-gold" />
+        <div className="min-w-0 flex-1 text-sm">
+          <div className="font-semibold">Unclaimed venue</div>
+          <div className="text-muted">Listed by {d.venue.createdBy?.displayName ?? 'a KJ'} who hosts karaoke here. Own or run {d.venue.name}?</div>
+        </div>
+        {demoClaim && me?.id !== d.venue.createdBy?.id && (
+          <Button size="sm" variant="primary" onClick={() => setOpen(true)}>
+            Claim this venue
+          </Button>
+        )}
+      </Card>
+      <Sheet open={open} onClose={() => setOpen(false)} title={`Claim ${d.venue.name}`}>
+        <div className="space-y-4 text-sm">
+          <p className="text-muted">Claiming lets you add photos, hours, specials and coupons, and choose your KJs. The KJ's nights stay on the schedule.</p>
+          <ol className="list-decimal space-y-1.5 pl-5 text-muted">
+            <li>Sign in with your business email.</li>
+            <li>Confirm you're the owner or an authorized operator.</li>
+            <li>We verify with a quick call to the venue's listed phone number.</li>
+          </ol>
+          <div className="rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-3 text-xs text-gold">Demo: verification is skipped. Claiming signs you in as this venue's account.</div>
+          <Button variant="primary" className="w-full" loading={claim.isPending} onClick={() => claim.mutate(undefined)}>
+            I'm the owner · claim {d.venue.name}
+          </Button>
+        </div>
+      </Sheet>
+    </>
   );
 }

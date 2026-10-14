@@ -44,3 +44,12 @@ export function duration(ms: number) {
 
 export const hourLabel = (h: number) => (h === 0 ? '12a' : h === 12 ? '12p' : h > 12 ? `${h - 12}p` : `${h}a`);
 export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
+
+/** "21:30" <-> minutes from midnight, for <input type="time">. */
+export const toTimeInput = (min: number) => `${String(Math.floor((min % 1440) / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+export const fromTimeInput = (v: string) => {
+  const [h, m] = v.split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+/** End times before the start run past midnight. */
+export const endAfter = (startMin: number, endMin: number) => (endMin <= startMin ? endMin + 1440 : endMin);

@@ -153,11 +153,14 @@ export const social = {
     };
   },
 
-  /** Positive-only praise between singers. There is deliberately no way to post criticism. */
+  /** Positive-only praise for singers, from fellow singers or KJs. There is deliberately no way to post criticism. */
   async givePraise(viewerId: string, toId: string, input: { emoji: string; message: string; venueId?: string; songId?: string }) {
     if (viewerId === toId) fail(400, "Praising yourself? We love the confidence, but no.");
     const to = await db.query.users.findFirst({ where: eq(schema.users.id, toId) });
     if (!to) notFound('User');
+    if (to!.role !== 'singer') fail(400, 'Praise is for singers. Rate KJs and venues with badges.');
+    const from = await db.query.users.findFirst({ where: eq(schema.users.id, viewerId) });
+    if (from?.role === 'venue') fail(403, 'Venues reward singers with coupons instead');
     const rel = await social.relationship(viewerId, toId);
     if (rel.blocked || rel.blockedBy) fail(403, 'Not available');
     const row = { id: newId('prs'), fromId: viewerId, toId, ...input, createdAt: clock.now() };
@@ -167,12 +170,31 @@ export const social = {
     return row;
   },
 
-  /** Praise feed. Pass `toId` for one user's wall, or omit for the scene-wide feed. */
-  async praiseFeed(viewerId: string | undefined, opts: { toId?: string; limit?: number } = {}) {
+  /** Invite Out: ask friends to join you at a venue on a given night (and RSVP yourself). */
+  async inviteOut(viewerId: string, input: { friendIds: string[]; venueId: string; date: string }) {
+    const friends = new Set(await friendIds(viewerId));
+    const to = input.friendIds.filter((id) => friends.has(id));
+    if (!to.length) fail(400, 'Pick at least one friend');
+    const venue = (await db.query.venues.findFirst({ where: eq(schema.venues.id, input.venueId) })) ?? notFound('Venue');
+    await db.insert(schema.rsvps).values({ userId: viewerId, venueId: input.venueId, date: input.date }).onConflictDoNothing();
+    const me = (await cardsById([viewerId])).get(viewerId)!;
+    const today = new Date(clock.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    const when = input.date === today ? 'tonight' : new Date(`${input.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
+    for (const id of to) {
+      await notifications.send(id, { kind: 'invite', title: `🎉 ${me.displayName} invited you out ${when}`, body: `Karaoke at ${venue!.name}. Tap "Going?" to join.`, link: `/venues/${venue!.slug}` });
+    }
+    return { sent: to.length };
+  },
+
+  /**
+   * Praise feed. Pass `toId` for one person's wall or `venueId` for praise given at one
+   * venue (what a venue sees); omit both for the scene-wide feed.
+   */
+  async praiseFeed(viewerId: string | undefined, opts: { toId?: string; venueId?: string; limit?: number } = {}) {
     const rows = await db
       .select()
       .from(schema.praise)
-      .where(opts.toId ? eq(schema.praise.toId, opts.toId) : undefined)
+      .where(opts.toId ? eq(schema.praise.toId, opts.toId) : opts.venueId ? eq(schema.praise.venueId, opts.venueId) : undefined)
       .orderBy(desc(schema.praise.createdAt))
       .limit(opts.limit ?? 40);
     const hidden = await social.hiddenIds(viewerId);

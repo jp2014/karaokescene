@@ -6,7 +6,7 @@ import { qr } from './service.ts';
 
 export const qrRoutes = new Hono<AppEnv>().post(
   '/scan',
-  zValidator('json', z.object({ kind: z.enum(['u', 'v']), key: z.string().min(1) })),
+  zValidator('json', z.object({ kind: z.enum(['u', 'v', 'c']), key: z.string().min(1) })),
   async (c) => {
     const { kind, key } = c.req.valid('json');
     return c.json(await qr.scan(requireViewer(c), kind, key));

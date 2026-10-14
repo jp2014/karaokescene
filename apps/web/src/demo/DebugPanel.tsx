@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Clock3, Footprints, LocateFixed, MapPin, RotateCcw, Search, Sparkles, UserPlus, Users } from 'lucide-react';
+import { Clock3, Crown, Footprints, LocateFixed, MapPin, RotateCcw, Search, Sparkles, UserPlus, Users } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Avatar, ROLE_LABEL } from '~/components/Avatar';
+import { PLANS } from '~/components/Premium';
 import { Button, cx, Section, Segmented, Sheet } from '~/components/ui';
 import { unwrap } from '~/lib/api';
 import { DAYS, dayTimeLabel, serverNow, setServerOffset } from '~/lib/format';
@@ -133,11 +134,15 @@ function WorldControls() {
     onSuccess: () => qc.invalidateQueries(),
   });
   const leave = useAction(() => unwrap(demoApi['auto-leave'][':venueId'].$post({ param: { venueId } })), {
-    success: (r) => (r.left ? `${r.left} walked out → Auto Leave sent to the KJ` : 'Nobody is checked in there'),
+    success: (r) => (r.left ? `${r.left} walked out → Auto Leave alert sent to the KJ (KJ Pro)` : 'Nobody is checked in there'),
     onSuccess: () => qc.invalidateQueries(),
   });
   const referral = useAction(() => unwrap(demoApi.referral.$post()), {
     success: (r) => `@${r.handle} joined via your QR code (${r.scans} total)`,
+    onSuccess: () => qc.invalidateQueries(),
+  });
+  const plan = useAction((on: boolean) => unwrap(demoApi.upgrade.$post({ json: { on } })), {
+    success: (_, on) => (on ? `${me ? PLANS[me.role].name : 'Premium'} unlocked` : 'Switched to the free plan'),
     onSuccess: () => qc.invalidateQueries(),
   });
   const reset = useAction(() => unwrap(demoApi.reset.$post()), {
@@ -225,6 +230,19 @@ function WorldControls() {
           <p className="mt-3 text-xs text-faint">Karaoke nights, "Live now" and Peak Hours follow scene time ({DAYS.length}-day schedule, Central Time).</p>
         </div>
       </Section>
+
+      {me && (
+        <Section title="Paid plan" icon={<Crown className="size-5 text-gold" />}>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm">
+              {me.displayName} is on <b>{me.isPremium ? PLANS[me.role].name : 'the free plan'}</b>
+            </span>
+            <Button size="sm" loading={plan.isPending} onClick={() => plan.mutate(!me.isPremium)}>
+              {me.isPremium ? 'Switch to free (see locks)' : `Unlock ${PLANS[me.role].name}`}
+            </Button>
+          </div>
+        </Section>
+      )}
 
       <Section title="Growth loop" icon={<Sparkles className="size-5 text-violet" />}>
         <Button size="sm" disabled={!me || me.role === 'venue'} loading={referral.isPending} onClick={() => referral.mutate(undefined)}>

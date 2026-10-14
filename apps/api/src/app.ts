@@ -14,6 +14,8 @@ import { reputationRoutes } from './modules/reputation/routes.ts';
 import { notificationRoutes } from './modules/notifications/routes.ts';
 import { qrRoutes } from './modules/qr/routes.ts';
 import { promoRoutes } from './modules/promo/routes.ts';
+import { mediaRoutes } from './modules/media/routes.ts';
+import { walletRoutes } from './modules/wallet/routes.ts';
 
 /**
  * The HTTP surface. Each module owns its routes; this file only composes them.
@@ -33,7 +35,9 @@ const api = new Hono<AppEnv>()
   .route('/reputation', reputationRoutes)
   .route('/notifications', notificationRoutes)
   .route('/qr', qrRoutes)
-  .route('/promo', promoRoutes);
+  .route('/promo', promoRoutes)
+  .route('/media', mediaRoutes)
+  .route('/wallet', walletRoutes);
 
 /** Comma-separated origins allowed to call the API (production); unset allows any origin. */
 const allowedOrigin = (origin: string) => {

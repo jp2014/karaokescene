@@ -7,16 +7,22 @@ import { notifications } from '../notifications/service.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
 import { venues } from '../venues/service.ts';
+import { wallet } from '../wallet/service.ts';
 
 /** Every 3 scans/referrals earns another growth badge. */
 const GROWTH_STEP = 3;
 
 /**
  * QR codes encode plain URLs (https://<host>/q/u/<handle> or /q/v/<slug>) so any phone
- * camera opens them. Scanning a venue checks you in; scanning a person connects you.
+ * camera opens them. Scanning a venue checks you in; scanning a person connects you;
+ * a venue scanning a coupon (/q/c/<code>) redeems it.
  */
 export const qr = {
-  async scan(viewer: User, kind: 'u' | 'v', key: string) {
+  async scan(viewer: User, kind: 'u' | 'v' | 'c', key: string) {
+    if (kind === 'c') {
+      if (viewer.role !== 'venue') return { type: 'coupon' as const, code: key, coupon: null };
+      return { type: 'coupon' as const, code: key, coupon: await wallet.redeem(viewer, key) };
+    }
     if (kind === 'v') {
       const venue = (await venues.bySlug(key)) ?? notFound('Venue');
       const checkin = await presence.checkIn(viewer, venue!.id, 'qr');

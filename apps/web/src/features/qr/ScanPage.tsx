@@ -1,11 +1,15 @@
-import { Camera, ScanLine } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Camera, ImagePlus, ScanLine, Star, Ticket } from 'lucide-react';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ROLE_LABEL } from '~/components/Avatar';
+import { FilePicker } from '~/components/FilePicker';
 import { QrCard } from '~/components/QrCard';
-import { Button, Segmented } from '~/components/ui';
+import { Button, Card, cx, Pill, Section, Segmented } from '~/components/ui';
+import { GalleryTile, VenueArt } from '~/components/VenueArt';
+import { api, unwrap } from '~/lib/api';
 import { DemoScans } from '~/lib/demo';
-import { useMe } from '~/lib/queries';
+import { useAction, useBooth, useMe, useRegulars } from '~/lib/queries';
 import { parseQr, useQrScan } from './useQrScan';
 
 declare global {
@@ -24,7 +28,9 @@ export function ScanPage() {
           <h1 className="text-3xl font-extrabold">
             Scan <span className="text-gradient">& Share</span>
           </h1>
-          <p className="mt-1 text-muted">Scan a venue to check in. Scan a person to connect.</p>
+          <p className="mt-1 text-muted">
+            {me?.role === 'venue' ? 'Scan a singer’s coupon to redeem it, or share your check-in code.' : 'Scan a venue to check in. Scan a person to connect.'}
+          </p>
         </div>
         <Segmented
           value={tab}
@@ -48,7 +54,107 @@ export function ScanPage() {
           </div>
         )
       )}
+      {me?.role === 'singer' && <Regulars />}
+      {me?.role === 'kj' && <ShareNightPhotos />}
+      {me?.role === 'venue' && <RedeemByCode />}
     </div>
+  );
+}
+
+/** 5 or more nights checked in at a venue makes you a Regular there. */
+function Regulars() {
+  const { data } = useRegulars();
+  if (!data) return null;
+  return (
+    <Section title="Become a Regular" icon={<Star className="size-5 text-gold" />}>
+      <p className="-mt-1 text-sm text-muted">Check in 5 or more nights at a venue and you're a Regular there. Regulars stand out to KJs and venues, and often get coupons.</p>
+      <div className="space-y-2">
+        {data.slice(0, 6).map((r) => (
+          <Link key={r.venue.id} to="/venues/$slug" params={{ slug: r.venue.slug }} className={cx('flex items-center gap-3 rounded-2xl border p-3', r.isRegular ? 'border-gold/40 bg-gold/5' : 'border-line bg-surface/70')}>
+            <VenueArt name={r.venue.name} hue={r.venue.hue} photoUrl={r.venue.photoUrl} className="size-11 shrink-0 rounded-xl" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{r.venue.name}</div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-3">
+                <div className={cx('h-full rounded-full', r.isRegular ? 'bg-gold' : 'bg-brand')} style={{ width: `${Math.min(r.visits / 5, 1) * 100}%` }} />
+              </div>
+            </div>
+            {r.isRegular ? <Pill tone="gold">⭐ Regular</Pill> : <span className="text-xs text-muted">{r.visits}/5 nights</span>}
+          </Link>
+        ))}
+        {!data.length && <p className="text-sm text-muted">Check in somewhere to start counting.</p>}
+      </div>
+    </Section>
+  );
+}
+
+/** KJs share photos from their night straight into the venue's gallery. */
+function ShareNightPhotos() {
+  const { data: booth } = useBooth();
+  const venues = booth?.venues ?? [];
+  const [venueId, setVenueId] = useState<string>();
+  const [caption, setCaption] = useState('');
+  const [posted, setPosted] = useState<{ id: string; mediaUrl: string; caption: string; hue: number }[]>([]);
+  const target = venueId ?? booth?.venue?.id ?? venues[0]?.id;
+  const venue = venues.find((v) => v.id === target);
+  const post = useAction(
+    (mediaUrl: string) => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: target! }, json: { mediaUrl, caption: caption || `Tonight at ${venue?.name}` } })),
+    {
+      invalidate: [['venue']],
+      success: `Posted to ${venue?.name}'s gallery 📸`,
+      onSuccess: (r) => {
+        setPosted((p) => [{ id: r.id, mediaUrl: r.mediaUrl!, caption: r.caption, hue: r.hue }, ...p]);
+        setCaption('');
+      },
+    },
+  );
+  if (!venues.length) return null;
+  return (
+    <Section title="Share photos from tonight" icon={<ImagePlus className="size-5 text-pink" />}>
+      <Card className="space-y-3 p-4">
+        <p className="text-sm text-muted">Snap the crowd, the stage, the group sing-along. Photos go to the venue's gallery and the venue can feature the best ones.</p>
+        {venues.length > 1 && (
+          <select value={target} onChange={(e) => setVenueId(e.target.value)} className="w-full text-sm">
+            {venues.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <input value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={120} placeholder="Caption (optional)" className="w-full text-sm" />
+        <FilePicker variant="primary" className="w-full" capture="environment" onUploaded={(url) => post.mutate(url)}>
+          <Camera className="size-4" /> Take or upload a photo
+        </FilePicker>
+        {posted.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {posted.map((g) => (
+              <GalleryTile key={g.id} hue={g.hue} emoji="📸" caption={g.caption} kind="photo" mediaUrl={g.mediaUrl} />
+            ))}
+          </div>
+        )}
+      </Card>
+    </Section>
+  );
+}
+
+/** Venues redeem coupons by scanning the singer's QR, or typing the code as a fallback. */
+function RedeemByCode() {
+  const [code, setCode] = useState('');
+  const redeem = useAction((c: string) => unwrap(api.wallet.redeem.$post({ json: { code: c } })), {
+    invalidate: [['issued']],
+    success: (r) => `Redeemed: ${r.title} for ${r.singer?.displayName ?? 'the singer'} ✅`,
+    onSuccess: () => setCode(''),
+  });
+  return (
+    <Section title="Redeem a coupon by code" icon={<Ticket className="size-5 text-gold" />}>
+      <div className="flex gap-2">
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. KS284384" className="min-w-0 flex-1 font-mono tracking-widest" />
+        <Button variant="primary" disabled={code.length < 4} loading={redeem.isPending} onClick={() => redeem.mutate(code)}>
+          Redeem
+        </Button>
+      </div>
+      <p className="text-xs text-faint">Each coupon works once. Award coupons to singers from Venue HQ.</p>
+    </Section>
   );
 }
 

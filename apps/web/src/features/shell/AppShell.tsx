@@ -1,7 +1,7 @@
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bell, Compass, Disc3, Home, ListMusic, LogOut, MessageCircleHeart, Mic2, QrCode, Store, User, Users, Wrench } from 'lucide-react';
+import { Bell, Building2, Compass, Disc3, Home, ListMusic, LogOut, MessageCircleHeart, Mic2, QrCode, Radar, Store, Ticket, User, Users, Wrench } from 'lucide-react';
 import { Suspense, useState, type ReactNode } from 'react';
 import { Avatar, ROLE_LABEL } from '~/components/Avatar';
 import { cx, LiveDot } from '~/components/ui';
@@ -15,11 +15,21 @@ import { useMe, useNotifications, type Me } from '~/lib/queries';
 
 type NavItem = { to: string; label: string; icon: typeof Home; live?: boolean };
 
+/** Each account type gets its own menu. KJs don't need the singer-facing Discover map. */
 function navFor(me: Me): NavItem[] {
-  const common = { discover: { to: '/', label: 'Discover', icon: Compass }, feed: { to: '/feed', label: 'Praise Feed', icon: MessageCircleHeart }, friends: { to: '/friends', label: 'Friends', icon: Users }, me: { to: '/me', label: 'Profile', icon: User } };
-  if (me.role === 'kj') return [common.discover, { to: '/kj', label: 'KJ Booth', icon: Disc3, live: !!me.kjSession }, common.feed, common.friends, common.me];
-  if (me.role === 'venue') return [common.discover, { to: '/hq', label: 'Venue HQ', icon: Store }, common.feed, common.me];
-  return [common.discover, { to: '/live', label: 'My Night', icon: Mic2, live: !!me.checkin }, { to: '/songs', label: 'Song List', icon: ListMusic }, common.feed, common.friends, common.me];
+  const common = { feed: { to: '/feed', label: 'Praise Feed', icon: MessageCircleHeart }, me: { to: '/me', label: me.role === 'singer' ? 'Profile' : 'Profile & Settings', icon: User } };
+  if (me.role === 'kj')
+    return [{ to: '/kj', label: 'KJ Booth', icon: Disc3, live: !!me.kjSession }, { to: '/my-venues', label: 'My Venues', icon: Building2 }, common.feed, { to: '/friends', label: 'Singers Near You', icon: Radar }, common.me];
+  if (me.role === 'venue') return [{ to: '/hq', label: 'Venue HQ', icon: Store }, common.feed, { to: '/friends', label: 'Singers Near You', icon: Radar }, common.me];
+  return [
+    { to: '/', label: 'Discover', icon: Compass },
+    { to: '/live', label: 'My Night', icon: Mic2, live: !!me.checkin },
+    { to: '/wallet', label: 'My Wallet', icon: Ticket },
+    { to: '/songs', label: 'Song List', icon: ListMusic },
+    common.feed,
+    { to: '/friends', label: 'Friends', icon: Users },
+    common.me,
+  ];
 }
 
 function Logo({ compact }: { compact?: boolean }) {
@@ -159,16 +169,21 @@ function LiveBanner() {
   return (
     <Link to="/live" className="sticky top-[60px] z-30 mx-4 mt-3 flex items-center gap-3 rounded-2xl border border-live/30 bg-live/10 px-4 py-2.5 text-sm backdrop-blur-xl lg:top-4 lg:mx-10">
       <LiveDot />
-      <span className="flex-1 font-medium">You're checked in. Open your night for the queue, Song Roulette and who's here.</span>
+      <span className="flex-1 font-medium">You're checked in. Open your night to send songs to the KJ, spin Song Roulette and see who's here.</span>
       <span className="font-semibold text-live">Open →</span>
     </Link>
   );
 }
 
 function BottomTabs({ me, isActive }: { me: Me; isActive: (to: string) => boolean }) {
-  const roleTab = me.role === 'kj' ? { to: '/kj', label: 'Booth', icon: Disc3, live: !!me.kjSession } : me.role === 'venue' ? { to: '/hq', label: 'HQ', icon: Store, live: false } : { to: '/live', label: 'My Night', icon: Mic2, live: !!me.checkin };
-  const left = [{ to: '/', label: 'Discover', icon: Compass, live: false }, roleTab];
-  const right = [me.role === 'singer' ? { to: '/songs', label: 'Songs', icon: ListMusic, live: false } : { to: '/feed', label: 'Feed', icon: MessageCircleHeart, live: false }, { to: '/me', label: 'Me', icon: User, live: false }];
+  const tab = (to: string, label: string, icon: typeof Home, live = false) => ({ to, label, icon, live });
+  const meTab = tab('/me', 'Me', User);
+  const [left, right] =
+    me.role === 'kj'
+      ? [[tab('/kj', 'Booth', Disc3, !!me.kjSession), tab('/my-venues', 'Venues', Building2)], [tab('/feed', 'Feed', MessageCircleHeart), meTab]]
+      : me.role === 'venue'
+        ? [[tab('/hq', 'HQ', Store), tab('/friends', 'Near You', Radar)], [tab('/feed', 'Feed', MessageCircleHeart), meTab]]
+        : [[tab('/', 'Discover', Compass), tab('/live', 'My Night', Mic2, !!me.checkin)], [tab('/wallet', 'Wallet', Ticket), meTab]];
   const Tab = (t: (typeof left)[number]) => (
     <Link key={t.to} to={t.to} className={cx('relative flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium', isActive(t.to) ? 'text-fg' : 'text-faint')}>
       <t.icon className={cx('size-[22px]', isActive(t.to) && 'text-pink')} />

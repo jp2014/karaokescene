@@ -24,6 +24,22 @@ export const BADGES: BadgeDef[] = [
   { key: 'kj.vibe', label: 'Vibe Setter', description: 'Reads the room perfectly', icon: 'Waves', givenBy: 'venue', givenTo: 'kj' },
   { key: 'kj.gapless', label: 'Gapless Music', description: 'Never a dead second between singers', icon: 'Infinity', givenBy: 'venue', givenTo: 'kj' },
   { key: 'kj.clean', label: 'Clean Freak', description: 'Leaves the stage spotless', icon: 'SprayCan', givenBy: 'venue', givenTo: 'kj' },
+  // Singer -> Singer (alongside written praise)
+  { key: 'peer.hype', label: 'Hype Squad', description: 'Cheers everyone on, every song', icon: 'Megaphone', givenBy: 'singer', givenTo: 'singer' },
+  { key: 'peer.duet', label: 'Duet Partner', description: 'Brings out the best in a duet', icon: 'HeartHandshake', givenBy: 'singer', givenTo: 'singer' },
+  { key: 'peer.brave', label: 'Brave Pick', description: 'Took on a hard song and owned it', icon: 'Flame', givenBy: 'singer', givenTo: 'singer' },
+  { key: 'peer.vibes', label: 'Good Vibes', description: 'Makes newcomers feel welcome', icon: 'Smile', givenBy: 'singer', givenTo: 'singer' },
+  // Singer -> KJ
+  { key: 'kjfan.fair', label: 'Fair Rotation', description: 'Everyone gets their turn', icon: 'Scale', givenBy: 'singer', givenTo: 'kj' },
+  { key: 'kjfan.sound', label: 'Great Sound', description: 'Mix and levels on point', icon: 'Volume2', givenBy: 'singer', givenTo: 'kj' },
+  { key: 'kjfan.hype', label: 'Hype Host', description: 'Makes every singer feel like a star', icon: 'Sparkles', givenBy: 'singer', givenTo: 'kj' },
+  { key: 'kjfan.songbook', label: 'Deep Songbook', description: 'Has the song you were hoping for', icon: 'BookOpen', givenBy: 'singer', givenTo: 'kj' },
+  // Singer -> Venue
+  { key: 'venue.vibe', label: 'Great Vibe', description: 'A room you want to sing in', icon: 'PartyPopper', givenBy: 'singer', givenTo: 'venue' },
+  { key: 'venue.drinks', label: 'Good Drinks', description: 'Specials worth showing up for', icon: 'Martini', givenBy: 'singer', givenTo: 'venue' },
+  { key: 'venue.sound', label: 'Great Sound System', description: 'Mics and speakers that do you justice', icon: 'Volume2', givenBy: 'singer', givenTo: 'venue' },
+  { key: 'venue.staff', label: 'Friendly Staff', description: 'Bartenders and servers who get karaoke', icon: 'HeartHandshake', givenBy: 'singer', givenTo: 'venue' },
+  { key: 'venue.safe', label: 'Feels Safe', description: 'Welcoming to everyone', icon: 'ShieldCheck', givenBy: 'singer', givenTo: 'venue' },
   // Growth loop
   { key: 'growth.scene-builder', label: 'Scene Builder', description: 'Brought new people into the scene with their QR code', icon: 'QrCode', givenBy: 'system', givenTo: 'singer' },
   { key: 'growth.kj-ambassador', label: 'Scene Ambassador', description: 'Grew the scene by sharing their QR card', icon: 'Megaphone', givenBy: 'system', givenTo: 'kj' },

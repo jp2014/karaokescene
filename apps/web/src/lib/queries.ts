@@ -19,6 +19,9 @@ export const qk = {
   notifications: ['notifications'] as const,
   praise: ['praise'] as const,
   events: ['events'] as const,
+  wallet: ['wallet'] as const,
+  myVenues: ['my-venues'] as const,
+  regulars: ['regulars'] as const,
 };
 
 const signedIn = () => auth.signedIn();
@@ -61,13 +64,21 @@ export const useProfile = (handle: string) =>
 export type Profile = NonNullable<ReturnType<typeof useProfile>['data']>;
 
 export const useCircle = () => useQuery({ queryKey: qk.circle, queryFn: () => unwrap(api.social.circle.$get()), enabled: signedIn() });
-export const useMySongs = () => useQuery({ queryKey: qk.mySongs, queryFn: () => unwrap(api.songs.mine.$get()), enabled: signedIn() });
+/** The viewer's song list; pass the on-site KJ to know which songs are in their songbook. */
+export const useMySongs = (kjId?: string) =>
+  useQuery({ queryKey: [...qk.mySongs, kjId ?? null], queryFn: () => unwrap(api.songs.mine.$get({ query: kjId ? { kjId } : {} })), enabled: signedIn() });
 export type ListSong = NonNullable<ReturnType<typeof useMySongs>['data']>[number];
 
 export const useBooth = () => useQuery({ queryKey: qk.booth, queryFn: () => unwrap(api.live.booth.$get()) });
 export type Booth = NonNullable<ReturnType<typeof useBooth>['data']>;
 export const useMyLive = (enabled = true) =>
   useQuery({ queryKey: qk.myLive, queryFn: () => unwrap(api.live.mine.$get()), enabled: enabled && signedIn() });
+
+export const useWallet = () => useQuery({ queryKey: qk.wallet, queryFn: () => unwrap(api.wallet.$get()), enabled: signedIn() });
+export type Coupon = NonNullable<ReturnType<typeof useWallet>['data']>[number];
+export const useMyVenues = () => useQuery({ queryKey: qk.myVenues, queryFn: () => unwrap(api.venues.mine.$get()), enabled: signedIn() });
+export type MyVenue = NonNullable<ReturnType<typeof useMyVenues>['data']>[number];
+export const useRegulars = () => useQuery({ queryKey: qk.regulars, queryFn: () => unwrap(api.presence.regulars.$get()), enabled: signedIn() });
 
 export const useNotifications = () =>
   useQuery({ queryKey: qk.notifications, queryFn: () => unwrap(api.notifications.$get()), enabled: signedIn() });

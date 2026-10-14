@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireViewer, type AppEnv } from '../../lib/context.ts';
+import { isStoredMediaUrl } from '../../lib/storage.ts';
 import { profiles } from './service.ts';
 
 const vis = z.enum(['everyone', 'friends', 'nobody']);
@@ -10,6 +11,7 @@ const patch = z.object({
   bio: z.string().max(200),
   avatarHue: z.number().int().min(0).max(359),
   avatarEmoji: z.string().max(8),
+  avatarUrl: z.string().max(500).refine(isStoredMediaUrl, 'Upload a photo').nullable(),
   hometown: z.string().max(60).nullable(),
   ageRange: z.string().max(20).nullable(),
   favoriteNight: z.string().max(20).nullable(),

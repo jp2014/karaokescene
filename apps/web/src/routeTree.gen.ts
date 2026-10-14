@@ -17,8 +17,10 @@ import { Route as HqRouteImport } from './routes/hq'
 import { Route as KjRouteImport } from './routes/kj'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as MeRouteImport } from './routes/me'
+import { Route as MyVenuesRouteImport } from './routes/my-venues'
 import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SongsRouteImport } from './routes/songs'
+import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UHandleRouteImport } from './routes/u.$handle'
 import { Route as VenuesSlugRouteImport } from './routes/venues.$slug'
@@ -64,6 +66,11 @@ const MeRoute = MeRouteImport.update({
   path: '/me',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MyVenuesRoute = MyVenuesRouteImport.update({
+  id: '/my-venues',
+  path: '/my-venues',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScanRoute = ScanRouteImport.update({
   id: '/scan',
   path: '/scan',
@@ -72,6 +79,11 @@ const ScanRoute = ScanRouteImport.update({
 const SongsRoute = SongsRouteImport.update({
   id: '/songs',
   path: '/songs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WalletRoute = WalletRouteImport.update({
+  id: '/wallet',
+  path: '/wallet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WelcomeRoute = WelcomeRouteImport.update({
@@ -104,8 +116,10 @@ export interface FileRoutesByFullPath {
   '/kj': typeof KjRoute
   '/live': typeof LiveRoute
   '/me': typeof MeRoute
+  '/my-venues': typeof MyVenuesRoute
   '/scan': typeof ScanRoute
   '/songs': typeof SongsRoute
+  '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
@@ -120,8 +134,10 @@ export interface FileRoutesByTo {
   '/kj': typeof KjRoute
   '/live': typeof LiveRoute
   '/me': typeof MeRoute
+  '/my-venues': typeof MyVenuesRoute
   '/scan': typeof ScanRoute
   '/songs': typeof SongsRoute
+  '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
@@ -137,8 +153,10 @@ export interface FileRoutesById {
   '/kj': typeof KjRoute
   '/live': typeof LiveRoute
   '/me': typeof MeRoute
+  '/my-venues': typeof MyVenuesRoute
   '/scan': typeof ScanRoute
   '/songs': typeof SongsRoute
+  '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
@@ -155,8 +173,10 @@ export interface FileRouteTypes {
     | '/kj'
     | '/live'
     | '/me'
+    | '/my-venues'
     | '/scan'
     | '/songs'
+    | '/wallet'
     | '/welcome'
     | '/u/$handle'
     | '/venues/$slug'
@@ -171,8 +191,10 @@ export interface FileRouteTypes {
     | '/kj'
     | '/live'
     | '/me'
+    | '/my-venues'
     | '/scan'
     | '/songs'
+    | '/wallet'
     | '/welcome'
     | '/u/$handle'
     | '/venues/$slug'
@@ -187,8 +209,10 @@ export interface FileRouteTypes {
     | '/kj'
     | '/live'
     | '/me'
+    | '/my-venues'
     | '/scan'
     | '/songs'
+    | '/wallet'
     | '/welcome'
     | '/u/$handle'
     | '/venues/$slug'
@@ -204,8 +228,10 @@ export interface RootRouteChildren {
   KjRoute: typeof KjRoute
   LiveRoute: typeof LiveRoute
   MeRoute: typeof MeRoute
+  MyVenuesRoute: typeof MyVenuesRoute
   ScanRoute: typeof ScanRoute
   SongsRoute: typeof SongsRoute
+  WalletRoute: typeof WalletRoute
   WelcomeRoute: typeof WelcomeRoute
   UHandleRoute: typeof UHandleRoute
   VenuesSlugRoute: typeof VenuesSlugRoute
@@ -270,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/my-venues': {
+      id: '/my-venues'
+      path: '/my-venues'
+      fullPath: '/my-venues'
+      preLoaderRoute: typeof MyVenuesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scan': {
       id: '/scan'
       path: '/scan'
@@ -282,6 +315,13 @@ declare module '@tanstack/react-router' {
       path: '/songs'
       fullPath: '/songs'
       preLoaderRoute: typeof SongsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wallet': {
+      id: '/wallet'
+      path: '/wallet'
+      fullPath: '/wallet'
+      preLoaderRoute: typeof WalletRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/welcome': {
@@ -324,8 +364,10 @@ const rootRouteChildren: RootRouteChildren = {
   KjRoute: KjRoute,
   LiveRoute: LiveRoute,
   MeRoute: MeRoute,
+  MyVenuesRoute: MyVenuesRoute,
   ScanRoute: ScanRoute,
   SongsRoute: SongsRoute,
+  WalletRoute: WalletRoute,
   WelcomeRoute: WelcomeRoute,
   UHandleRoute: UHandleRoute,
   VenuesSlugRoute: VenuesSlugRoute,

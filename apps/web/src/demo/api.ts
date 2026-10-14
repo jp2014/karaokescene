@@ -54,5 +54,13 @@ export async function signInAs(userId: string, qc: QueryClient) {
   return user;
 }
 
-export const demoUpgrade = () => unwrap(demoApi.upgrade.$post());
+export const demoUpgrade = (on = true) => unwrap(demoApi.upgrade.$post({ json: { on } }));
 export const demoSetPremiere = (venueId: string, on: boolean) => unwrap(demoApi.premiere[':venueId'].$put({ param: { venueId }, json: { on } }));
+
+/** Claim a KJ-listed venue and continue as its account (no owner verification in the demo). */
+export async function demoClaim(venueId: string, qc: QueryClient) {
+  const { token, user } = await unwrap(demoApi.claim[':venueId'].$post({ param: { venueId } }));
+  personaToken.set(token);
+  qc.clear();
+  return user;
+}

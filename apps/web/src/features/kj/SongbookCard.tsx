@@ -36,7 +36,7 @@ export function SongbookCard({ compact }: { compact?: boolean }) {
           <BookOpen className="size-4 text-violet" /> Song Book
         </div>
         <Button size="sm" onClick={() => setOpen(!open)}>
-          <Upload className="size-4" /> Import
+          <Upload className="size-4" /> Upload
         </Button>
       </div>
       <div className="mt-3 flex items-end gap-2">

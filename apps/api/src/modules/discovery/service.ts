@@ -5,7 +5,7 @@ import { clock, localParts } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { DEFAULT_CENTER, DISCOVERY_RADIUS_MI, distanceMi, type LatLng } from '../../lib/geo.ts';
 import { notFound } from '../../lib/http.ts';
-import { busyLevel, presence } from '../presence/service.ts';
+import { busyLevel, presence, REGULAR_AFTER } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
 import { social } from '../social/service.ts';
 import { liveNight, nextNight, tonight } from '../venues/schedule.ts';
@@ -59,6 +59,9 @@ export const discovery = {
         lng: v.lng,
         hue: v.hue,
         vibes: v.vibes,
+        photoUrl: v.photoUrl,
+        venueTypes: v.venueTypes,
+        claimed: v.claimed,
         isPremiere: v.isPremiere,
         distanceMi: Math.round(distanceMi(center, v) * 10) / 10,
         isLive: !!liveN,
@@ -119,9 +122,19 @@ export const discovery = {
     const myCheckin = viewer ? await presence.currentCheckin(viewer.id) : null;
     const friendIds = new Set(viewer ? await social.friendIds(viewer.id) : []);
     const kjBadges = await Promise.all(kjs.map(async (k) => ({ ...k, badges: (await reputation.summary(k.id)).slice(0, 4) })));
+    const [ratings, createdBy, myVisits] = await Promise.all([
+      reputation.summary(venue.ownerId),
+      venue.createdById ? cardsById([venue.createdById]).then((m) => m.get(venue.createdById!) ?? null) : Promise.resolve(null),
+      viewer?.role === 'singer' ? presence.visitCount(viewer.id, venue.id) : Promise.resolve(0),
+    ]);
+    // Who's Going and Peak Hours are Venue Premier features: only shown for Premier venues.
+    const premier = venue.isPremiere;
     return {
       now,
-      venue: { ...venue, ownerHandle: owner[0]?.handle ?? null },
+      venue: { ...venue, ownerHandle: owner[0]?.handle ?? null, createdBy },
+      ratings,
+      myVisits,
+      regularAfter: REGULAR_AFTER,
       isLive: !!liveN,
       schedule: nights.map((n) => ({ ...n, kj: n.kjId ? (kjCards.get(n.kjId) ?? null) : null, isLive: n.id === liveN?.id })),
       kjNow: kjSession ? { kj: kjCards.get(kjSession.kjId)!, since: kjSession.startedAt } : null,
@@ -130,12 +143,13 @@ export const discovery = {
       events,
       specials,
       gallery,
-      whosGoing,
-      peakHours: peak,
+      whosGoing: premier ? whosGoing : null,
+      peakHours: premier ? peak : null,
       kjs: kjBadges,
       isFavorite: favIds.includes(venue.id),
       myCheckin: myCheckin?.venueId === venue.id ? myCheckin : null,
       canManage: viewer?.id === venue.ownerId,
+      canHost: viewer?.role === 'kj' && kjs.some((k) => k.id === viewer.id),
     };
   },
 };

@@ -16,7 +16,13 @@ export type NotificationKind =
   | 'song-request'
   | 'up-next'
   | 'kj-now'
-  | 'qr-scan';
+  | 'qr-scan'
+  | 'request-accepted'
+  | 'coupon'
+  | 'invite'
+  | 'promo'
+  | 'blast'
+  | 'regular';
 
 export const notifications = {
   /** Store it for the in-app list, nudge any open app over Realtime, and push to their devices. */

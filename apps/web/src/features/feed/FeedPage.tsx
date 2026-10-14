@@ -22,7 +22,7 @@ export function FeedPage() {
           <h1 className="text-3xl font-extrabold">
             Praise <span className="text-gradient">Feed</span>
           </h1>
-          <p className="mt-1 text-muted">Shout-outs from around the scene. Positive vibes only, always.</p>
+          <p className="mt-1 text-muted">{data?.scope ? `Praise from singers and KJs at ${data.scope.venueName}. Positive vibes only, always.` : 'Shout-outs from around the scene. Positive vibes only, always.'}</p>
         </div>
         {me?.role === 'singer' && !!circle?.friends.length && (
           <Card className="p-4">
@@ -40,6 +40,7 @@ export function FeedPage() {
           </Card>
         )}
         <PraiseList items={data?.items ?? []} />
+        {data?.scope && !data.items.length && <p className="text-sm text-muted">No praise at your venue yet. It shows up here when singers and KJs hype each other up in your room.</p>}
       </div>
       <aside className="space-y-6">
         <Section title="Happening soon" icon={<Trophy className="size-5 text-gold" />}>

@@ -6,6 +6,7 @@ import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
 import type { AuthIdentity } from '../../lib/auth.ts';
+import { hasPremium, PLAN_NAME } from '../../lib/plans.ts';
 import type { PrivacySettings } from '../../db/schema.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
@@ -13,14 +14,9 @@ import { social } from '../social/service.ts';
 import { songLists, songbooks } from '../songs/service.ts';
 import { venues } from '../venues/service.ts';
 
-export const DEFAULT_PRIVACY: PrivacySettings = {
-  hometown: 'everyone',
-  ageRange: 'friends',
-  favoriteNight: 'everyone',
-  yearsSinging: 'everyone',
-  proStatus: 'everyone',
-  songList: 'friends',
-};
+import { DEFAULT_PRIVACY } from './privacy.ts';
+
+export { DEFAULT_PRIVACY };
 
 const slugify = (s: string) =>
   s
@@ -30,7 +26,7 @@ const slugify = (s: string) =>
     .slice(0, 20);
 
 export type ProfilePatch = Partial<
-  Pick<User, 'displayName' | 'bio' | 'avatarHue' | 'avatarEmoji' | 'hometown' | 'ageRange' | 'favoriteNight' | 'yearsSinging' | 'isPro' | 'ghostMode'>
+  Pick<User, 'displayName' | 'bio' | 'avatarHue' | 'avatarEmoji' | 'avatarUrl' | 'hometown' | 'ageRange' | 'favoriteNight' | 'yearsSinging' | 'isPro' | 'ghostMode'>
 > & { privacy?: Partial<PrivacySettings> };
 
 /** Identity + profile assembly. Everything privacy-related about a person is decided here. */
@@ -64,17 +60,21 @@ export const profiles = {
   },
 
   async me(user: User) {
-    const [badges, checkin, ownedVenue, kjSession] = await Promise.all([
+    const [badges, checkin, ownedVenue, kjSession, isPremium] = await Promise.all([
       reputation.summary(user.id),
       presence.currentCheckin(user.id),
       user.role === 'venue' ? venues.ownedBy(user.id) : Promise.resolve(undefined),
       user.role === 'kj' ? presence.kjSessionFor(user.id) : Promise.resolve(null),
+      hasPremium(user),
     ]);
     return {
       ...user,
+      isPremium,
+      plan: PLAN_NAME[user.role],
       badges,
       checkin,
-      venue: ownedVenue ? { id: ownedVenue.id, slug: ownedVenue.slug, name: ownedVenue.name } : null,
+      venue: ownedVenue ?? null,
+      venueKjs: ownedVenue ? await venues.kjsFor(ownedVenue.id) : [],
       kjSession,
     };
   },

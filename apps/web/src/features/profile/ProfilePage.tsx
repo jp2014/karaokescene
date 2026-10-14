@@ -41,8 +41,9 @@ export function ProfileView({ p }: { p: Profile }) {
   const fav = useAction((on: boolean) => unwrap(api.social.favorites[':type'][':id'].$put({ param: { type: 'user', id: p.id }, json: { on } })), { invalidate: inv, success: (r) => (r.favorited ? 'Added to favorites ⭐' : 'Removed from favorites') });
   const block = useAction((on: boolean) => unwrap(api.social.blocks[':userId'].$put({ param: { userId: p.id }, json: { on } })), { invalidate: inv, success: (_, on) => (on ? 'Blocked. They can no longer see you.' : 'Unblocked'), onSuccess: () => setMore(false) });
 
-  const canPraise = me?.role === 'singer' && p.role === 'singer' && !rel.isSelf && !rel.blocked;
-  const canAward = !rel.isSelf && ((me?.role === 'kj' && p.role === 'singer') || (me?.role === 'venue' && p.role === 'kj'));
+  // Trust rules (all positive): singers praise and rate singers, KJs and venues; KJs praise and rate singers; venues rate KJs.
+  const canPraise = (me?.role === 'singer' || me?.role === 'kj') && p.role === 'singer' && !rel.isSelf && !rel.blocked;
+  const canAward = !rel.isSelf && !rel.blocked && (me?.role === 'singer' || (me?.role === 'kj' && p.role === 'singer') || (me?.role === 'venue' && p.role === 'kj'));
   const details = [
     p.details.hometown && { icon: MapPin, label: p.details.hometown },
     p.details.favoriteNight && { icon: CalendarHeart, label: `${p.details.favoriteNight}s` },
@@ -113,7 +114,7 @@ export function ProfileView({ p }: { p: Profile }) {
                   )}
                   {canAward && (
                     <Button onClick={() => setAward(true)} className="border-gold/40 text-gold">
-                      <Award className="size-4" /> Award badge
+                      <Award className="size-4" /> {me?.role === 'singer' ? 'Rate' : 'Award badge'}
                     </Button>
                   )}
                   {p.role !== 'venue' && (
@@ -159,7 +160,7 @@ export function ProfileView({ p }: { p: Profile }) {
       <div className="grid gap-8 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
         <div className="space-y-8">
           <Section title="Badges" icon={<Award className="size-5 text-gold" />}>
-            {p.badges.length ? <BadgeGrid badges={p.badges} /> : <EmptyState icon="🏅" title="No badges yet" body={p.role === 'kj' ? 'Venues award KJ badges.' : 'KJs award singer badges after a great night.'} />}
+            {p.badges.length ? <BadgeGrid badges={p.badges} /> : <EmptyState icon="🏅" title="No badges yet" body={p.role === 'kj' ? 'Venues and singers award KJ badges.' : p.role === 'venue' ? 'Singers rate venues with positive badges.' : 'KJs and fellow singers award badges after a great night.'} />}
             {p.recentBadges.length > 0 && (
               <div className="space-y-1 pt-1">
                 {p.recentBadges.slice(0, 4).map((b) => (
@@ -234,7 +235,7 @@ export function ProfileView({ p }: { p: Profile }) {
           {p.role === 'venue' && p.managedVenue && (
             <Link to="/venues/$slug" params={{ slug: p.managedVenue.slug }}>
               <Card className="overflow-hidden">
-                <VenueArt name={p.managedVenue.name} hue={p.managedVenue.hue} className="h-32" />
+                <VenueArt name={p.managedVenue.name} hue={p.managedVenue.hue} photoUrl={p.managedVenue.photoUrl} className="h-32" />
                 <div className="p-4 font-semibold">Visit {p.managedVenue.name} →</div>
               </Card>
             </Link>

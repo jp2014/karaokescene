@@ -33,9 +33,9 @@ export function VenueCard({ v, selected, onHover, compact }: { v: VenueSummary; 
       )}
     >
       <div className="relative">
-        <VenueArt name={v.name} hue={v.hue} className="size-20 rounded-2xl sm:size-24" />
+        <VenueArt name={v.name} hue={v.hue} photoUrl={v.photoUrl} className="size-20 rounded-2xl sm:size-24" />
         {v.isPremiere && (
-          <span className="absolute -top-1.5 -left-1.5 grid size-6 place-items-center rounded-full bg-gold text-ink shadow-lg" title="Premiere Partner">
+          <span className="absolute -top-1.5 -left-1.5 grid size-6 place-items-center rounded-full bg-gold text-ink shadow-lg" title="Premier">
             <Star className="size-3.5 fill-current" />
           </span>
         )}

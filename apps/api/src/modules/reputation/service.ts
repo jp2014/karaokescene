@@ -39,7 +39,10 @@ export const reputation = {
     }));
   },
 
-  /** Awards follow the trust rules: KJs award singers, venues award KJs, once per night per badge. */
+  /**
+   * Awards follow the trust rules (all positive): singers rate each other, KJs and venues;
+   * KJs rate singers; venues rate KJs. Once per badge per night.
+   */
   async award(giver: User, recipientId: string, badgeKey: string) {
     const def = badgeByKey.get(badgeKey) ?? notFound('Badge');
     const recipient = (await db.query.users.findFirst({ where: eq(schema.users.id, recipientId) })) ?? notFound('User');

@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { lazy } from 'react';
 
 /**
@@ -12,5 +13,6 @@ export const DemoPersonas = __DEMO__ ? lazy(() => import('~/demo/PersonaPicker')
 export const DemoScans = __DEMO__ ? lazy(() => import('~/demo/SimulatedScans').then((m) => ({ default: m.SimulatedScans }))) : null;
 
 /** Mock checkout for the upsell buttons. Real payments aren't built, so production shows "coming soon". */
-export const demoUpgrade = __DEMO__ ? () => import('~/demo/api').then((m) => m.demoUpgrade()) : null;
+export const demoUpgrade = __DEMO__ ? (on = true) => import('~/demo/api').then((m) => m.demoUpgrade(on)) : null;
 export const demoSetPremiere = __DEMO__ ? (venueId: string, on: boolean) => import('~/demo/api').then((m) => m.demoSetPremiere(venueId, on)) : null;
+export const demoClaim = __DEMO__ ? (venueId: string, qc: QueryClient) => import('~/demo/api').then((m) => m.demoClaim(venueId, qc)) : null;

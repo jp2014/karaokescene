@@ -9,7 +9,11 @@ export const songRoutes = new Hono<AppEnv>()
     const { q, kjId } = c.req.valid('query');
     return c.json(await songCatalog.search(q, { kjId }));
   })
-  .get('/mine', async (c) => c.json(await songLists.forUser(requireViewer(c).id)))
+  .get('/mine', zValidator('query', z.object({ kjId: z.string().optional() })), async (c) => c.json(await songLists.forUser(requireViewer(c).id, c.req.valid('query').kjId)))
+  .post('/mine/custom', zValidator('json', z.object({ title: z.string().min(1).max(120), artist: z.string().min(1).max(120) })), async (c) => {
+    const { title, artist } = c.req.valid('json');
+    return c.json(await songLists.addCustom(requireViewer(c).id, title, artist));
+  })
   .get('/recommendations', async (c) => c.json(await songLists.recommend(requireViewer(c).id)))
   .put('/mine/:songId', async (c) => {
     await songLists.add(requireViewer(c).id, c.req.param('songId'));

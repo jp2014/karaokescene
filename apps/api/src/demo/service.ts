@@ -86,9 +86,10 @@ export const demo = {
     return { handle: `newbie${n}`, scans };
   },
 
-  /** Mock checkout for the upsell flows (KJ Pro, singer Plus, Premiere Partner). Real payments aren't built yet. */
-  async upgrade(user: User) {
-    await db.update(schema.users).set({ isPremium: true }).where(eq(schema.users.id, user.id));
-    return { isPremium: true };
+  /** Mock checkout for every plan (payments are "coming soon"); `on: false` shows the locked state again. */
+  async upgrade(user: User, on = true) {
+    if (user.role === 'venue') await db.update(schema.venues).set({ isPremiere: on }).where(eq(schema.venues.ownerId, user.id));
+    else await db.update(schema.users).set({ isPremium: on }).where(eq(schema.users.id, user.id));
+    return { isPremium: on };
   },
 };

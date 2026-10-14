@@ -195,7 +195,7 @@ function MapLegend() {
         </span>
       ))}
       <span className="flex items-center gap-2">
-        <span className="grid size-3.5 place-items-center rounded-full bg-gold text-[8px] text-ink">★</span> Premiere Partner
+        <span className="grid size-3.5 place-items-center rounded-full bg-gold text-[8px] text-ink">★</span> Premier
       </span>
     </div>
   );
