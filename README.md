@@ -1,7 +1,7 @@
-# Karaoke Scene: POC
+# Karaoke Scene
 
 A location-based social network for the karaoke community: **Singers**, **KJs** and **Venues** in one ecosystem.
-This is a high-fidelity, functional demo seeded with a fictional Omaha scene.
+Production uses Supabase Auth, Postgres, Storage and Realtime through a Hono API. Local development includes a fictional Omaha scene; production starts empty.
 
 ## Run it
 
@@ -21,7 +21,7 @@ On your phone (same Wi-Fi), use the "Network" URL Vite prints. Printed QR codes 
 | `pnpm db:reset` | Wipe and reseed demo data (also available in **Demo controls**) |
 | `pnpm typecheck` | Typecheck every package |
 | `pnpm db:generate` | Generate a migration after editing `apps/api/src/db/schema.ts` (written to `supabase/migrations`) |
-| `pnpm release` | Ship to production: Supabase (migrations, secrets, Edge Function) + Netlify (PWA) |
+| `pnpm release` | Deploy production (requires hosting accounts; see below) |
 
 Requires Node 22+ and pnpm 10+.
 
@@ -61,33 +61,59 @@ mock checkout) only exists locally:
 | --- | --- | --- |
 | API host | Node (`src/hosts/node.ts`) | Supabase Edge Function `api` (`src/hosts/edge.ts`) |
 | Database | PGlite, or `DATABASE_URL` | Supabase Postgres (`app` schema, not exposed via the Data API) |
-| Sign-in | Demo personas (+ Supabase if configured) | Supabase Auth: Google, Apple, Facebook |
+| Sign-in | Demo personas (+ Supabase if configured) | Supabase Auth: email code + Google |
 | Realtime | In-process bus over SSE | Supabase Realtime (private broadcast channels) |
 | Media | `apps/api/data/media` | Supabase Storage (`media` bucket) |
 | Scheduled jobs | 60s timer | pg_cron (every 5 min) |
-| Push | off | FCM (if configured) |
-| Web | Vite dev server | Netlify (static) |
+| Push | off | Dormant; use in-app notifications + Realtime |
+| Web | Vite dev server | Static host (Cloudflare Pages planned) |
 
 To try real Supabase locally, see `apps/api/.env.example`.
 
-## Deploying
+## Production setup
 
-One-time setup:
+Production is not deployed yet. Hosting direction: a free static web host with Supabase for the backend.
+The old `pnpm release` script still targets Netlify and will be replaced in Phase 3. Do not use it yet.
 
-1. Create a Supabase project. In **Authentication → Sign In / Providers**, enable Google, Apple and Facebook
-   (each needs an OAuth app in that provider's console), and add your site URL under **URL Configuration**.
-2. Optional push: create a Firebase project, generate a service account key and a Web Push (VAPID) key.
-3. `cp .env.deploy.example .env.deploy`, fill it in, and log the CLIs in once:
-   `npx supabase@2 login` and `npx netlify-cli@27 login`.
+Create a production Supabase project in US East, then configure:
 
-Then every release is:
+1. Auth: email codes using `supabase/templates/email-code.html`, Google OAuth, and the final site's URL/redirect URLs.
+2. Custom SMTP for real users. Supabase's built-in sender only delivers to project team addresses
+   ([SMTP documentation](https://supabase.com/docs/guides/auth/auth-smtp)).
+3. Database migrations, the `api` Edge Function, and Storage via the release workflow.
+4. The static web build with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public key), and
+   `VITE_API_URL=https://<ref>.supabase.co/functions/v1/api`. Service keys never go into web settings.
+
+Leave Firebase settings unset for launch. Push remains dormant; in-app notifications and Realtime work independently.
+Payments show “coming soon”; local demo plan toggles never ship in the real build.
+
+### Verify against local Supabase
+
+The stack uses ports 55421 (API), 55422 (Postgres), 55423 (Studio), 55424 (Mailpit).
+`npx supabase start` requires Docker. The project's Auth config is for local development;
+production URLs and Google credentials must be set separately before deployment.
+
+Run the API with `DEMO=off`, `DATABASE_URL` pointing at local Supabase, `DATABASE_MIGRATE=off`
+(if the CLI applied migrations), `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
+Run Vite with `VITE_DEMO=false`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `API_URL` pointing at that API.
+Use separate ports from the demo (8791 / 5174). `npx supabase status` gives the local settings.
+
+Existing browser checks (Chrome required; default web port 5174):
 
 ```bash
-pnpm release
+node scripts/e2e/real-auth.mjs
+node scripts/e2e/real-venues.mjs
 ```
 
-It typechecks, pushes migrations (`supabase/migrations`), sets function secrets, bundles and deploys the
-API Edge Function, then builds the PWA against it and deploys to Netlify.
+Focused persistence regressions (fresh in-memory database, no Docker required):
+
+```bash
+cd apps/api
+node --import tsx scripts/check-phase2.ts
+```
+
+These check account-claim overlaps, concurrent venue setup, reminder deduplication, and job delivery.
+PGlite serializes transactions; real Postgres is still needed to verify multi-connection races.
 
 ## Architecture
 
@@ -106,13 +132,12 @@ packages/api-client  Typed client generated from the API's routes (Hono RPC). A 
 | `live` | Song submissions (singer sends, KJ accepts), KJ booth, singer's "My Night" |
 | `venues` | Schedules, events, drink specials, RSVPs ("who's going"), gallery, venue settings, KJ-listed venues and claims |
 | `wallet` | Venue coupons: awarded by venues, redeemed once by scanning the singer's QR |
-| `media` | Photo and menu uploads (disk locally, Netlify Blobs when hosted) |
-| `profiles` | Identity, demo sign-in, privacy-filtered profile views, Ghost Mode |
+| `profiles` | Supabase identity, role onboarding, privacy-filtered profile views, Ghost Mode |
 | `social` | Friends, favorites, blocks, positive-only praise |
 | `reputation` | Badge catalog and award rules (KJ→singer, venue→KJ, growth badges) |
 | `songs` | Catalog, personal song lists, roulette, recommendations, KJ songbooks + CSV import |
 | `qr` | QR scan handling and the referral growth loop |
-| `promo` | Auto-posting, Auto Promote, Message Blast, special auto-posts (delivery to social networks not built) |
+| `promo` | Share reminders, Auto Promote, Message Blast; users share through native share, Facebook links, SMS or clipboard |
 | `media` | Photo and menu uploads (Supabase Storage; disk locally) |
 | `wallet` | Venue coupons: awarded by venues, redeemed once by scanning the singer's QR |
 | `notifications` | In-app notifications, Realtime nudges and FCM push |
@@ -128,8 +153,15 @@ photo and menu uploads (Storage), promo post scheduling, GPS.
 
 **Not built yet** (production shows "coming soon"; the local demo mocks them):
 - Payments (Singer Plus, KJ Pro, Venue Premier).
-- Delivering promo posts to Facebook/Instagram.
-- Claiming a KJ-listed venue (the demo signs you in as the venue).
+- Automated publishing to Facebook/Instagram (replaced with manual sharing).
+
+**Real onboarding:** email code or Google → explicit role selection → profile. Venue owners can add their own
+venue or claim an unclaimed KJ listing, with an ownership declaration. Claims preserve the listing’s reputation
+and notify its listing KJ. This is self-serve; ownership is not independently verified.
+
+**Promotion:** sharing works without paid plans. Paid Auto Promote queues a reminder for the next show when
+the KJ opens Booth/My Venues; it refreshes on later visits. Special reminders cover the next seven days.
+Scheduled jobs deliver each due reminder once, with a link back to its share page; they do not publish to social networks.
 
 ### Hosting flexibility
 

@@ -7,6 +7,7 @@ import { requirePremium } from '../../lib/plans.ts';
 import { isStoredMediaUrl } from '../../lib/storage.ts';
 import { VENUE_TYPES } from '../../db/schema.ts';
 import { promo } from '../promo/service.ts';
+import { defer } from '../../lib/defer.ts';
 import { venues } from './service.ts';
 
 const place = {
@@ -26,7 +27,11 @@ const menuUrl = z.string().max(500).refine((u) => isStoredMediaUrl(u) || /^https
 /** Venue management (events, specials, gallery, schedule) plus RSVPs. Reading venues lives in discovery. */
 export const venueRoutes = new Hono<AppEnv>()
   .get('/events', async (c) => c.json(await venues.upcomingEvents(undefined, 30)))
-  .get('/mine', async (c) => c.json(await venues.myVenuesForKj(requireViewer(c, 'kj'))))
+  .get('/mine', async (c) => {
+    const kj = requireViewer(c, 'kj');
+    defer('auto promote', () => promo.rollAutoPromote(kj));
+    return c.json(await venues.myVenuesForKj(kj));
+  })
   .post(
     '/',
     zValidator(
@@ -50,6 +55,7 @@ export const venueRoutes = new Hono<AppEnv>()
     const kj = requireViewer(c, 'kj');
     const venueId = c.req.param('venueId');
     const { on } = c.req.valid('json');
+    if (on) await requirePremium(kj, 'Auto Promote');
     await venues.setAutoPromote(kj, venueId, on);
     return c.json({ on, next: on ? await promo.autoPromoteNext(kj, venueId) : null });
   })
@@ -68,9 +74,9 @@ export const venueRoutes = new Hono<AppEnv>()
     async (c) => {
       const viewer = requireViewer(c);
       const input = c.req.valid('json');
-      if (input.autoPost) await requirePremium(viewer, 'Drink Special Auto Post');
+      if (input.autoPost) await requirePremium(viewer, 'Special reminders');
       const special = await venues.createSpecial(viewer, c.req.param('venueId'), input);
-      const posts = input.autoPost ? await promo.autoPostSpecial(viewer, special) : [];
+      const posts = input.autoPost ? await promo.remindSpecial(viewer, special) : [];
       return c.json({ ...special, autoPosts: posts.length });
     },
   )

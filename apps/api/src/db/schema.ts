@@ -59,7 +59,7 @@ export type HappyHour = { days: number[]; startMin: number; endMin: number; deta
 export const venues = table('venues', {
   id: text('id').primaryKey(),
   /** The venue's account. KJ-listed venues get a placeholder account until the owner claims it. */
-  ownerId: text('owner_id').notNull(),
+  ownerId: text('owner_id').notNull().unique(),
   claimed: boolean('claimed').notNull().default(true),
   /** The KJ who listed this venue, when it wasn't created by its owner. */
   createdById: text('created_by_id'),
@@ -149,7 +149,7 @@ export const specials = table('specials', {
   price: text('price').notNull().default(''),
   details: text('details').notNull().default(''),
   days: jsonb('days').$type<number[]>().notNull(),
-  /** Drink Special Auto Post (Premier): announce it on each of its days. */
+  /** Premier reminders to share a special on its days. */
   autoPost: boolean('auto_post').notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
@@ -297,6 +297,8 @@ export const notifications = table(
 
 export const promoPosts = table('promo_posts', {
   id: text('id').primaryKey(),
+  /** Source night or special, so deleting it cancels outstanding reminders. */
+  sourceKey: text('source_key'),
   authorId: text('author_id').notNull(),
   venueId: text('venue_id'),
   networks: jsonb('networks').$type<string[]>().notNull(),

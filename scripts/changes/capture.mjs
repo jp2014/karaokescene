@@ -201,19 +201,27 @@ const GO_REAL_BEFORE = [
   { name: 'venue-claim', path: '/venues/leavenworth-lounge', as: 'singer', prep: click('Claim this venue'), targets: [dialog], pad: 0, noBox: true },
   { name: 'upgrade-sheet', path: '/songs', as: 'singer', prep: async (p) => { await setPlan('singer', false); await p.reload({ waitUntil: 'networkidle' }); await p.waitForTimeout(1000); await click('Unlock with')(p); }, targets: [dialog], pad: 0, noBox: true },
 ];
-const GO_REAL_AFTER = [];
+const GO_REAL_AFTER = [
+  { name: 'kj-autopost', path: '/kj', as: 'kj', targets: [card('Promote your night')] },
+  { name: 'hq-specials-autopost', path: '/hq', as: 'venue', targets: [(p) => p.locator('div.rounded-2xl', { hasText: 'Remind me to share it' }).first()], context: section('Drink specials') },
+  GO_REAL_BEFORE.find((s) => s.name === 'myvenues-autopromote'),
+  GO_REAL_BEFORE.find((s) => s.name === 'myvenues-add'),
+];
 
 const ROUNDS = { v2: { before: V2_BEFORE, after: V2_AFTER }, 'go-real': { before: GO_REAL_BEFORE, after: GO_REAL_AFTER } };
 const specs = ROUNDS[round]?.[version] ?? (console.error(`Unknown round ${round}. Rounds: ${Object.keys(ROUNDS).join(', ')}`), process.exit(1));
 
+let failures = 0;
 for (const s of specs) {
   if (only && !only.includes(s.name)) continue;
   try {
     await shot(s);
   } catch (e) {
+    failures++;
     console.log('✗', s.name, e.message.split('\n')[0]);
   }
 }
 // Leave every persona on its paid plan, as the seed does.
 for (const who of ['singer', 'kj', 'venue']) await setPlan(who, true);
 await browser.close();
+if (failures) process.exitCode = 1;

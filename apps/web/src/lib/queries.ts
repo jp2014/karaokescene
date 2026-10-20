@@ -86,7 +86,8 @@ export type MyVenue = NonNullable<ReturnType<typeof useMyVenues>['data']>[number
 export const useRegulars = () => useQuery({ queryKey: qk.regulars, queryFn: () => unwrap(api.presence.regulars.$get()), enabled: signedIn() });
 
 export const useNotifications = () =>
-  useQuery({ queryKey: qk.notifications, queryFn: () => unwrap(api.notifications.$get()), enabled: signedIn() });
+  // Scheduled database jobs do not emit API broadcasts. Refresh while visible as a fallback.
+  useQuery({ queryKey: qk.notifications, queryFn: () => unwrap(api.notifications.$get()), enabled: signedIn(), refetchInterval: 60_000 });
 
 export const usePraiseFeed = () => useQuery({ queryKey: qk.praise, queryFn: () => unwrap(api.social.praise.$get()), refetchInterval: 20_000 });
 export const useEvents = () => useQuery({ queryKey: qk.events, queryFn: () => unwrap(api.venues.events.$get()) });

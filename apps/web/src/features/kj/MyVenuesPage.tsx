@@ -1,11 +1,12 @@
 import { Link } from '@tanstack/react-router';
-import { Building2, CalendarClock, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
+import { Building2, CalendarClock, Lock, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, cx, EmptyState, PageLoader, Pill, Sheet, Toggle } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
 import { DAYS, dayTimeLabel, endAfter, fromTimeInput, hoursLabel, toTimeInput } from '~/lib/format';
-import { qk, useAction, useMyVenues, type MyVenue } from '~/lib/queries';
+import { qk, useAction, useMe, useMyVenues, type MyVenue } from '~/lib/queries';
+import { UpgradeSheet } from '~/components/Premium';
 import { useVenuePlace, VenuePlaceFields } from '~/features/venue/VenuePlaceFields';
 
 type Night = { dayOfWeek: number; startMin: number; endMin: number };
@@ -22,7 +23,7 @@ export function MyVenuesPage() {
           <h1 className="text-3xl font-extrabold">
             My <span className="text-gradient">Venues</span>
           </h1>
-          <p className="mt-1 text-muted">Set your hours at each venue and let Auto Promote post your nights for you.</p>
+          <p className="mt-1 text-muted">Set your hours at each venue. Auto Promote reminds you to share each night a day ahead.</p>
         </div>
         <Button variant="primary" onClick={() => setAdding(true)}>
           <Plus className="size-4" /> Add a venue
@@ -48,8 +49,10 @@ function VenueCard({ v }: { v: MyVenue }) {
   const [editing, setEditing] = useState(false);
   const promote = useAction((on: boolean) => unwrap(api.venues[':venueId']['auto-promote'].$put({ param: { venueId: v.id }, json: { on } })), {
     invalidate: [qk.myVenues, ['posts']],
-    success: (r) => (r.on ? (r.next ? `Auto Promote on. Next post ${dayTimeLabel(r.next.scheduledFor)}` : 'Auto Promote on') : 'Auto Promote off'),
+    success: (r) => (r.on ? (r.next ? `Auto Promote on. Next reminder ${dayTimeLabel(r.next.scheduledFor)}` : 'Auto Promote on') : 'Auto Promote off'),
   });
+  const { data: me } = useMe();
+  const [plan, setPlan] = useState(false);
   return (
     <Card className="overflow-hidden">
       <div className="relative">
@@ -98,9 +101,16 @@ function VenueCard({ v }: { v: MyVenue }) {
           <Megaphone className="size-5 shrink-0 text-pink" />
           <div className="min-w-0 flex-1 text-sm">
             <div className="font-semibold">Auto Promote</div>
-            <div className="text-xs text-muted">Posts each of your nights here 24 hours before it starts.</div>
+            <div className="text-xs text-muted">A reminder to share each of your nights here, 24 hours before it starts.</div>
           </div>
-          <Toggle on={v.autoPromote} onChange={(on) => promote.mutate(on)} label="Auto Promote" disabled={!mine.length} />
+          {me?.isPremium ? (
+            <Toggle on={v.autoPromote} onChange={(on) => promote.mutate(on)} label="Auto Promote" disabled={!mine.length} />
+          ) : (
+            <button onClick={() => setPlan(true)} className="flex items-center gap-1 text-xs font-semibold text-gold">
+              <Lock className="size-3.5" /> KJ Pro
+            </button>
+          )}
+          <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Auto Promote" />
         </div>
         {!v.claimed && <p className="text-xs text-faint">The owner hasn't claimed this venue yet. Once they do, they can add photos, specials and coupons. Your nights stay as they are.</p>}
       </div>

@@ -29,6 +29,27 @@
       "when": 1792534107676,
       "tag": "20261020220827_venue_claimed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792536563970,
+      "tag": "20261020224923_share_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792539400435,
+      "tag": "20261020233640_unique_venue_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792539557893,
+      "tag": "20261020233917_reminder_sources",
+      "breakpoints": true
     }
   ]
 }

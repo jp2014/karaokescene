@@ -9,8 +9,8 @@ type Role = 'singer' | 'kj' | 'venue';
 /** The paid plan for each account type, and what it unlocks. */
 export const PLANS: Record<Role, { name: string; price: string; features: string[] }> = {
   singer: { name: 'Singer Plus', price: '$2.99/mo', features: ['Smart song recommendations', 'Venue coupons from your regular spots'] },
-  kj: { name: 'KJ Pro', price: '$9/mo', features: ['Auto social posting to Facebook & Instagram', 'Auto Leave alerts when singers walk out', 'Message Blast to your singers'] },
-  venue: { name: 'Venue Premier', price: '$49/mo', features: ['Premier listing: priority on the map and a gold pin', "Show who's going on your page", 'Peak Hours insights', 'Drink Special Auto Post'] },
+  kj: { name: 'KJ Pro', price: '$9/mo', features: ['Auto Promote: a reminder to share each of your nights', 'Auto Leave alerts when singers walk out', 'Message Blast to your singers'] },
+  venue: { name: 'Venue Premier', price: '$49/mo', features: ['Premier listing: priority on the map and a gold pin', "Show who's going on your page", 'Peak Hours insights', 'Reminders to share your drink specials'] },
 };
 
 export function PremiumPill({ role }: { role: Role }) {

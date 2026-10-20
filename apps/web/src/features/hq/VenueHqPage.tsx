@@ -10,7 +10,7 @@ import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Segme
 import { GalleryTile } from '~/components/VenueArt';
 import { PeakHours } from '~/features/venue/PeakHours';
 import { AwardBadgeSheet } from '~/features/profile/ProfileActions';
-import { AutoPostCard } from '~/features/promo/AutoPostCard';
+import { PromoteCard } from '~/features/promo/PromoteCard';
 import { api, unwrap } from '~/lib/api';
 import { ago, dateLabel, DAYS, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { VenueSetup } from './VenueSetup';
@@ -66,7 +66,7 @@ function Hq({ d }: { d: VenueDetail }) {
           </div>
           <div className="min-w-48 flex-1">
             <div className="font-semibold">{v.isPremiere ? 'You’re on Venue Premier' : 'Venue Premier'}</div>
-            <div className="text-sm text-muted">Premier listing (priority on the map, gold pin), who's going on your page, Peak Hours insights and Drink Special Auto Post. $49/mo.</div>
+            <div className="text-sm text-muted">Premier listing (priority on the map, gold pin), who's going on your page, Peak Hours insights and reminders to share your specials. $49/mo.</div>
           </div>
           <Button variant={v.isPremiere ? 'secondary' : 'primary'} onClick={() => setPlan(true)}>
             {v.isPremiere ? 'Manage plan' : 'Upgrade'}
@@ -124,7 +124,7 @@ function Hq({ d }: { d: VenueDetail }) {
           </Section>
         </div>
         <aside className="space-y-6">
-          <AutoPostCard venues={[{ id: v.id, name: v.name }]} />
+          <PromoteCard venues={[v]} />
           <QrCard kind="v" keyValue={v.slug} title={v.name} subtitle="Scan to check in & see tonight's specials" hue={v.hue} cta="Scan to check in" />
           <p className="text-center text-xs text-muted">Print this as a table tent or by the stage. Scans check singers in and count toward your growth stats.</p>
         </aside>
@@ -213,7 +213,7 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
   const inv = [qk.venue(d.venue.slug), ['venues'], ['posts']];
   const create = useAction(() => unwrap(api.venues[':venueId'].specials.$post({ param: { venueId: d.venue.id }, json: { title, price, details, days, autoPost: autoPost && d.venue.isPremiere } })), {
     invalidate: inv,
-    success: (r) => (r.autoPosts ? `Special posted 🍹 Auto-posting on ${r.autoPosts} day${r.autoPosts === 1 ? '' : 's'} this week` : 'Special posted 🍹'),
+    success: (r) => (r.autoPosts ? `Special posted 🍹 We'll remind you to share it on ${r.autoPosts} day${r.autoPosts === 1 ? '' : 's'} this week` : 'Special posted 🍹'),
     onSuccess: () => {
       setTitle('');
       setPrice('');
@@ -232,17 +232,17 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
         <div className="flex items-center gap-3 rounded-2xl border border-line px-3 py-2 text-sm">
           <Megaphone className="size-4 shrink-0 text-pink" />
           <span className="flex-1">
-            Auto-post on each of its days <span className="text-xs text-muted">(Facebook, Instagram, Karaoke Scene)</span>
+            Remind me to share it on each of its days <span className="text-xs text-muted">(4pm)</span>
           </span>
           {d.venue.isPremiere ? (
-            <Toggle on={autoPost} onChange={setAutoPost} label="Auto-post this special" />
+            <Toggle on={autoPost} onChange={setAutoPost} label="Remind me to share this special" />
           ) : (
             <button onClick={() => setPlan(true)} className="flex items-center gap-1 text-xs font-semibold text-gold">
               <Lock className="size-3.5" /> Premier
             </button>
           )}
         </div>
-        <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Drink Special Auto Post" />
+        <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Special reminders" />
         <div className="flex flex-wrap items-center gap-1.5">
           {DAYS.map((day, i) => (
             <button key={day} onClick={() => setDays(days.includes(i) ? days.filter((x) => x !== i) : [...days, i])} className={cx('h-8 w-11 rounded-full text-xs font-semibold', days.includes(i) ? 'bg-gold text-ink' : 'bg-surface-2 text-muted')}>
@@ -262,7 +262,7 @@ function SpecialsManager({ d }: { d: VenueDetail }) {
               <div className="truncate font-semibold">{s.title}</div>
               <div className="text-xs text-muted">
                 {s.days.map((x) => DAYS[x]).join(' · ')}
-                {s.autoPost && <span className="text-pink"> · auto-posting</span>}
+                {s.autoPost && <span className="text-pink"> · share reminders</span>}
               </div>
             </div>
             <button onClick={() => del.mutate(s.id)} className="text-faint hover:text-danger" aria-label="Delete">

@@ -87,6 +87,23 @@
        */
       const ROUNDS = [
         {
+          id: 'go-real', title: 'Real accounts and a real backend', date: 'Oct 20, 2026',
+          questions: [['Production setup', 'Supabase backend + free static web hosting. Production starts empty. Create the hosted project and configure email delivery before launch.']],
+          sections: [
+            { name: 'Accounts and venues', changes: [
+              { id: 'real-auth', title: 'Real email codes and Google sign-in', did: 'Supabase sends and verifies the code. First-time users choose a role; returning users keep their account. The local demo remains available for development.', shots: [['before','welcome-verify'],['after','welcome-verify'],['after','welcome-roles']], try: '/welcome' },
+              { id: 'real-claim', title: 'Owners add or claim their venue', did: 'Venue HQ offers setup instead of a dead end. Owners can find a KJ-listed venue and claim it after declaring ownership. The listing keeps its ratings and KJ schedule.', shots: [['before','venue-claim'],['after','venue-claim']], try: '/hq' },
+              { id: 'venue-pin', title: 'Choose the venue’s map pin', did: 'KJs and owners use the same venue form. Move the pin or use the current GPS position.', shots: [['before','myvenues-add'],['after','myvenues-add']], try: '/my-venues' },
+            ] },
+            { name: 'Sharing and paid plans', changes: [
+              { id: 'real-share', title: 'Share a real venue link', did: 'Use device sharing, Facebook, SMS or copy text and link. The app no longer pretends to publish a social post.', shots: [['before','kj-autopost'],['after','kj-autopost']], try: '/kj' },
+              { id: 'reminders', title: 'Reminders replace automatic posting', did: 'Auto Promote reminds the KJ to share. Drink specials can queue reminders for their days this week. Turning promotion off or deleting the special stops pending reminders.', shots: [['before','myvenues-autopromote'],['after','myvenues-autopromote'],['before','hq-specials-autopost'],['after','hq-specials-autopost']], try: '/my-venues' },
+              { id: 'coming-soon', title: 'Payments are coming soon', did: 'Production has no mock checkout. Paid features stay locked until billing is available; local demo accounts can still preview them.', shots: [['before','upgrade-sheet'],['after','upgrade-sheet']], try: '/songs' },
+            ] },
+          ],
+          unchanged: 'The demo and this change log stay development-only. Production has no seeded accounts or catalog: songs come from KJ imports. Push stays dormant for launch.',
+        },
+        {
           id: 'v2',
           title: 'Round 1 feedback',
           date: 'Oct 14, 2026',

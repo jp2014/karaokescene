@@ -370,8 +370,8 @@ export async function seed() {
     ntf(DEMO_USERS.kj, 'badge', 'You earned Cult Following!', 'Awarded by The Neon Mic', 60 * 26, '/me'),
   ]);
   await db.insert(schema.promoPosts).values([
-    { id: newId('pst'), authorId: DEMO_USERS.kj, venueId: 'ven_neon-mic', networks: ['facebook', 'instagram'], body: '🎤 Saturday at The Neon Mic! $3 wells, 9pm–2am. Bring your best Queen. #OmahaKaraoke', scheduledFor: now + DAY - 4 * 3600_000, status: 'scheduled', createdAt: now },
-    { id: newId('pst'), authorId: DEMO_USERS.kj, venueId: 'ven_nodo-note', networks: ['instagram', 'karaokescene'], body: 'Wednesday NoDo Note takeover. Deep cuts only 🎧', scheduledFor: now - 2 * DAY, status: 'posted', createdAt: now - 3 * DAY },
+    { id: newId('pst'), authorId: DEMO_USERS.kj, venueId: 'ven_neon-mic', networks: ['share'], body: '🎤 Saturday at The Neon Mic! $3 wells, 9pm–2am. Bring your best Queen. #OmahaKaraoke', scheduledFor: now + DAY - 4 * 3600_000, status: 'scheduled', createdAt: now },
+    { id: newId('pst'), authorId: DEMO_USERS.kj, venueId: 'ven_nodo-note', networks: ['share'], body: 'Wednesday NoDo Note takeover. Deep cuts only 🎧', scheduledFor: now - 2 * DAY, status: 'posted', createdAt: now - 3 * DAY },
   ]);
 
   return { users: users.length, venues: VENUES.length, songs: songs.length, checkins: checkins.length, live: liveVenues.length, center: DEFAULT_CENTER };

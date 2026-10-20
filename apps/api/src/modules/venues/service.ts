@@ -6,6 +6,8 @@ import type { VenueType } from '../../db/schema.ts';
 import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
+import { withUserLock } from '../../lib/locks.ts';
+import { mergeAccountRelations } from './merge-account.ts';
 import { DEFAULT_PRIVACY } from '../profiles/privacy.ts';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { notifications } from '../notifications/service.ts';
@@ -135,7 +137,6 @@ export const venues = {
   /** A venue account adds its own venue (one per account). */
   async createByOwner(owner: User, input: { name: string; address: string; neighborhood: string; city: string; lat: number; lng: number; venueTypes: VenueType[] }) {
     if (owner.role !== 'venue') fail(403, 'Only venue accounts can add their own venue');
-    if (await venues.ownedBy(owner.id)) fail(409, 'This account already manages a venue');
     const base = slugify(input.name) || 'venue';
     for (let attempt = 0; attempt < 5; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -144,14 +145,16 @@ export const venues = {
         id: newId('ven'), ownerId: owner.id, claimed: true, createdById: null, slug, name: input.name, tagline: '', description: '', address: input.address,
         neighborhood: input.neighborhood || input.city, city: input.city, lat: input.lat, lng: input.lng, hue: owner.avatarHue, isPremiere: false, capacity: 80, vibes: [], venueTypes: input.venueTypes,
       };
-      const created = await db
-        .insert(V)
-        .values(venue)
-        .then(() => true)
-        .catch((err) => (isUniqueViolation(err) ? false : Promise.reject(err)));
+      const created = await withUserLock(owner.id, async (tx) => {
+        // Claim and creation share this lock; recheck identity because a claim removes the old account.
+        const current = await tx.query.users.findFirst({ where: eq(schema.users.id, owner.id) });
+        if (!current || current.authId !== owner.authId) fail(409, 'Your account changed; reload and try again');
+        if (await tx.query.venues.findFirst({ where: eq(V.ownerId, owner.id) })) fail(409, 'This account already manages a venue');
+        await tx.insert(V).values(venue);
+        await tx.update(schema.users).set({ displayName: input.name, lat: input.lat, lng: input.lng }).where(eq(schema.users.id, owner.id));
+        return true;
+      }).catch((err) => (isUniqueViolation(err) ? false : Promise.reject(err)));
       if (!created) continue;
-      // The venue account goes by the venue's name.
-      await db.update(schema.users).set({ displayName: input.name, lat: input.lat, lng: input.lng }).where(eq(schema.users.id, owner.id));
       return venue;
     }
     return fail(409, 'Could not create that venue, please try again');
@@ -164,24 +167,25 @@ export const venues = {
    */
   async claim(claimant: User, venueId: string) {
     if (claimant.role !== 'venue' || !claimant.authId) fail(403, 'Sign in with a venue account to claim a venue');
-    if (await venues.ownedBy(claimant.id)) fail(409, 'This account already manages a venue');
     const v = (await venues.byId(venueId)) ?? notFound('Venue');
     const from = claimant.id;
     const to = v!.ownerId;
-    await db.transaction(async (tx) => {
+    await withUserLock(claimant.id, async (tx) => {
+      const current = await tx.query.users.findFirst({ where: eq(schema.users.id, claimant.id) });
+      if (!current || current.authId !== claimant.authId) fail(409, 'Your account changed; reload and try again');
+      if (await tx.query.venues.findFirst({ where: eq(V.ownerId, claimant.id) })) fail(409, 'This account already manages a venue');
       // Re-check under a row lock so two claimants can't both win.
       const [locked] = await tx.select().from(V).where(eq(V.id, venueId)).for('update');
       if (!locked || locked.claimed) fail(409, 'This venue has already been claimed');
       const S = schema;
+      await mergeAccountRelations(tx, from, to);
       const moves: [PgTable, PgColumn][] = [
-        [S.checkins, S.checkins.userId], [S.rsvps, S.rsvps.userId], [S.galleryItems, S.galleryItems.uploaderId], [S.songListEntries, S.songListEntries.userId],
+        [S.checkins, S.checkins.userId], [S.galleryItems, S.galleryItems.uploaderId],
         [S.songRequests, S.songRequests.singerId], [S.coupons, S.coupons.singerId], [S.badgeAwards, S.badgeAwards.recipientId], [S.badgeAwards, S.badgeAwards.giverId],
-        [S.praise, S.praise.fromId], [S.praise, S.praise.toId], [S.friendships, S.friendships.requesterId], [S.friendships, S.friendships.addresseeId],
-        [S.favorites, S.favorites.userId], [S.blocks, S.blocks.userId], [S.blocks, S.blocks.blockedId], [S.notifications, S.notifications.userId],
+        [S.praise, S.praise.fromId], [S.praise, S.praise.toId], [S.notifications, S.notifications.userId],
         [S.promoPosts, S.promoPosts.authorId], [S.pushTokens, S.pushTokens.userId], [S.users, S.users.referredById],
       ];
       for (const [t, col] of moves) await tx.update(t).set({ [colKey(t, col)]: to }).where(eq(col, from));
-      await tx.update(S.favorites).set({ targetId: to }).where(and(eq(S.favorites.targetType, 'user'), eq(S.favorites.targetId, from)));
       // Relationships between the two accounts would now point at themselves.
       await tx.delete(S.friendships).where(and(eq(S.friendships.requesterId, to), eq(S.friendships.addresseeId, to)));
       await tx.delete(S.blocks).where(and(eq(S.blocks.userId, to), eq(S.blocks.blockedId, to)));
@@ -201,13 +205,19 @@ export const venues = {
   /** KJs manage their own nights at a venue (the owner's other KJs are untouched). */
   async setKjNights(kj: User, venueId: string, nights: NightInput[]) {
     await linkedKj(kj, venueId);
-    await db.delete(N).where(and(eq(N.venueId, venueId), eq(N.kjId, kj.id)));
-    if (nights.length) await db.insert(N).values(nights.map((n) => ({ id: newId('nit'), venueId, kjId: kj.id, ...n })));
+    await db.transaction(async (tx) => {
+      await tx.delete(schema.promoPosts).where(and(eq(schema.promoPosts.authorId, kj.id), eq(schema.promoPosts.venueId, venueId), eq(schema.promoPosts.status, 'scheduled')));
+      await tx.delete(N).where(and(eq(N.venueId, venueId), eq(N.kjId, kj.id)));
+      if (nights.length) await tx.insert(N).values(nights.map((n) => ({ id: newId('nit'), venueId, kjId: kj.id, ...n })));
+    });
   },
 
   async setAutoPromote(kj: User, venueId: string, on: boolean) {
     await linkedKj(kj, venueId);
-    await db.update(L).set({ autoPromote: on }).where(and(eq(L.kjId, kj.id), eq(L.venueId, venueId)));
+    await db.transaction(async (tx) => {
+      await tx.update(L).set({ autoPromote: on }).where(and(eq(L.kjId, kj.id), eq(L.venueId, venueId)));
+      if (!on) await tx.delete(schema.promoPosts).where(and(eq(schema.promoPosts.authorId, kj.id), eq(schema.promoPosts.venueId, venueId), eq(schema.promoPosts.status, 'scheduled')));
+    });
   },
 
   /** Venue owners choose which KJs are associated with them. */
@@ -265,7 +275,10 @@ export const venues = {
   async deleteSpecial(viewer: User, specialId: string) {
     const s = (await db.query.specials.findFirst({ where: eq(schema.specials.id, specialId) })) ?? notFound('Special');
     await owned(viewer, s!.venueId);
-    await db.delete(schema.specials).where(eq(schema.specials.id, specialId));
+    await db.transaction(async (tx) => {
+      await tx.delete(schema.promoPosts).where(and(eq(schema.promoPosts.sourceKey, `special:${specialId}`), eq(schema.promoPosts.status, 'scheduled')));
+      await tx.delete(schema.specials).where(eq(schema.specials.id, specialId));
+    });
   },
 
   // --- Who's going ---------------------------------------------------------

@@ -2,10 +2,16 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireViewer, type AppEnv } from '../../lib/context.ts';
+import { defer } from '../../lib/defer.ts';
+import { promo } from '../promo/service.ts';
 import { live } from './service.ts';
 
 export const liveRoutes = new Hono<AppEnv>()
-  .get('/booth', async (c) => c.json(await live.booth(requireViewer(c, 'kj'))))
+  .get('/booth', async (c) => {
+    const kj = requireViewer(c, 'kj');
+    defer('auto promote', () => promo.rollAutoPromote(kj));
+    return c.json(await live.booth(kj));
+  })
   .get('/mine', async (c) => c.json(await live.mine(requireViewer(c))))
   .post('/submissions', zValidator('json', z.object({ songId: z.string(), source: z.enum(['list', 'roulette', 'search']) })), async (c) => {
     const { songId, source } = c.req.valid('json');

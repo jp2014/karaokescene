@@ -11,3 +11,6 @@ apps/api/data
 supabase/functions/api/index.js
 supabase/.temp
 supabase/.branches
+
+# TanStack Router generated cache
+apps/web/.tanstack/

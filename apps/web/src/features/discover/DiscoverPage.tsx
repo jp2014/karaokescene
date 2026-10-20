@@ -126,6 +126,14 @@ export function DiscoverPage() {
       <div className={cx('relative h-[calc(100dvh-64px-76px)] lg:h-dvh', mobileView === 'list' && 'max-lg:hidden')}>
         <VenueMap venues={venues} center={data?.center ?? loc.current} radiusMi={radiusMi} me={loc.current} selectedId={selected} onSelect={setSelected} className="absolute inset-0" />
         <MapLegend />
+        {data && !venues.length && (
+          <div className="absolute inset-x-3 top-28 mx-auto max-w-sm rounded-3xl border border-line bg-surface p-4 shadow-xl lg:top-4">
+            <p className="font-semibold">No venues match yet</p>
+            <p className="mt-1 text-sm text-muted">Try another time or a wider radius. KJs and venue owners can add their first listing.</p>
+            {me?.role === 'kj' && <Link to="/my-venues" className="mt-2 block text-sm font-semibold text-brand">Add a venue →</Link>}
+            {me?.role === 'venue' && <Link to="/hq" className="mt-2 block text-sm font-semibold text-brand">Set up your venue →</Link>}
+          </div>
+        )}
         {/* Mobile overlays */}
         <div className="absolute inset-x-0 top-0 p-3 lg:hidden">
           <div className="flex gap-2 overflow-x-auto scrollbar-none">
@@ -227,7 +235,7 @@ function SingersNearYou() {
         ))}
       </div>
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-        <Sparkles className="size-3.5 text-gold" /> Promote tonight with Auto-Posting to reach them.
+        <Sparkles className="size-3.5 text-gold" /> Share tonight’s venue link to invite your crowd.
       </p>
     </div>
   );
