@@ -121,7 +121,8 @@ export const live = {
     const req = (await db.query.songRequests.findFirst({ where: eq(R.id, requestId) })) ?? notFound('Submission');
     const session = await db.query.kjSessions.findFirst({ where: eq(schema.kjSessions.id, req!.kjSessionId) });
     if (session?.kjId !== kj.id) fail(403, 'Not your show');
-    await db.update(R).set({ status: accept ? 'accepted' : 'declined', decidedAt: clock.now() }).where(eq(R.id, requestId));
+    const [decided] = await db.update(R).set({ status: accept ? 'accepted' : 'declined', decidedAt: clock.now() }).where(and(eq(R.id, requestId), eq(R.status, 'submitted'))).returning({ id: R.id });
+    if (!decided) fail(409, 'The singer withdrew that song, or it was already handled');
     queueChanged(session!.venueId);
     const song = await db.query.songs.findFirst({ where: eq(schema.songs.id, req!.songId) });
     await notifications.send(req!.singerId, accept

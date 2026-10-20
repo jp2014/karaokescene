@@ -5,6 +5,7 @@ import type { User } from '../../lib/context.ts';
 import { newId } from '../../lib/ids.ts';
 import { hasPremium, requirePremium } from '../../lib/plans.ts';
 import { notifications } from '../notifications/service.ts';
+import { social } from '../social/service.ts';
 import { nextNight } from '../venues/schedule.ts';
 import { venues } from '../venues/service.ts';
 
@@ -73,7 +74,8 @@ export const promo = {
     const recent = myVenues.length
       ? await db.select({ id: schema.checkins.userId }).from(schema.checkins).where(and(inArray(schema.checkins.venueId, myVenues), gte(schema.checkins.checkedInAt, clock.now() - 60 * DAY)))
       : [];
-    const ids = [...new Set([...fans, ...recent].map((r) => r.id))];
+    const hidden = await social.hiddenIds(kj.id);
+    const ids = [...new Set([...fans, ...recent].map((r) => r.id))].filter((id) => !hidden.has(id));
     const singers = ids.length ? await db.select({ id: schema.users.id }).from(schema.users).where(and(inArray(schema.users.id, ids), eq(schema.users.role, 'singer'))) : [];
     for (const s of singers) await notifications.send(s.id, { kind: 'blast', title: `📣 ${kj.displayName}`, body: message, link: `/u/${kj.handle}` });
     return { sent: singers.length };

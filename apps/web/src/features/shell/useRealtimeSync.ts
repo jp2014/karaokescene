@@ -11,7 +11,7 @@ import { useLiveQueries } from '~/lib/realtime';
  */
 export function useRealtimeSync(me: Me | undefined) {
   const myVenue = me?.kjSession?.venueId ?? me?.checkin?.venueId;
-  useLiveQueries(me ? `user:${me.id}` : null, [qk.notifications, qk.booth, qk.myLive, qk.me]);
+  useLiveQueries(me ? `user:${me.id}` : null, [qk.notifications, qk.booth, qk.myLive, qk.me, qk.wallet, ['issued']]);
   useLiveQueries(myVenue ? `venue:${myVenue}` : null, [qk.booth, qk.myLive, qk.me]);
   useLiveQueries(me ? 'scene' : null, [['venues']]);
   useEffect(() => {

@@ -7,6 +7,7 @@ import { api, unwrap } from '~/lib/api';
 import { DAYS, dayTimeLabel, endAfter, fromTimeInput, hoursLabel, toTimeInput } from '~/lib/format';
 import { useLocation } from '~/lib/location';
 import { qk, useAction, useMyVenues, type MyVenue } from '~/lib/queries';
+import { DEMO } from '~/lib/demo';
 import { VENUE_TYPES, type VenueType } from '~/lib/venues';
 
 type Night = { dayOfWeek: number; startMin: number; endMin: number };
@@ -166,7 +167,12 @@ function AddVenueSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [types, setTypes] = useState<VenueType[]>(['Bar']);
   const [night, setNight] = useState<Night>({ dayOfWeek: 2, startMin: 21 * 60, endMin: 25 * 60 });
   const create = useAction(
-    () => unwrap(api.venues.$post({ json: { ...form, venueTypes: types, nights: [night], lat: loc.current.lat + (Math.random() - 0.5) * 0.004, lng: loc.current.lng + (Math.random() - 0.5) * 0.004 } })),
+    // The pin is your real GPS position, so add the venue while you're there. The demo scatters
+    // pins around the simulated location instead.
+    () => {
+      const at = DEMO ? { lat: loc.current.lat + (Math.random() - 0.5) * 0.004, lng: loc.current.lng + (Math.random() - 0.5) * 0.004 } : loc.current;
+      return unwrap(api.venues.$post({ json: { ...form, venueTypes: types, nights: [night], ...at } }));
+    },
     {
       invalidate: [qk.myVenues, qk.booth, ['venues']],
       success: (v) => `${v.name} is on the map 🎉`,
@@ -188,7 +194,8 @@ function AddVenueSheet({ open, onClose }: { open: boolean; onClose: () => void }
           <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City" className="min-w-0 flex-1" />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted">
-          <MapPin className="size-3.5" /> Pinned at your current location ({loc.label})
+          <MapPin className="size-3.5" />
+          {loc.known ? `Pinned at your current location${DEMO ? ` (${loc.label})` : ''}` : 'Turn on location and add the venue while you’re there, so singers find the right spot.'}
         </div>
         <div>
           <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Venue type</div>
@@ -204,7 +211,7 @@ function AddVenueSheet({ open, onClose }: { open: boolean; onClose: () => void }
           <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Your karaoke night</div>
           <NightRow night={night} onChange={(p) => setNight({ ...night, ...p })} />
         </div>
-        <Button variant="primary" className="w-full" disabled={form.name.trim().length < 2 || form.address.trim().length < 3} loading={create.isPending} onClick={() => create.mutate(undefined)}>
+        <Button variant="primary" className="w-full" disabled={!loc.known || form.name.trim().length < 2 || form.address.trim().length < 3} loading={create.isPending} onClick={() => create.mutate(undefined)}>
           Add venue
         </Button>
       </div>

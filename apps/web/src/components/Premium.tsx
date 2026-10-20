@@ -1,7 +1,7 @@
-import { Check, Crown, Lock, Sparkles } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import { demoUpgrade } from '~/lib/demo';
-import { qk, useAction, useMe } from '~/lib/queries';
+import { Check, Crown, Lock } from 'lucide-react';
+import { Suspense, useState, type ReactNode } from 'react';
+import { DemoPlanSwitch } from '~/lib/demo';
+import { useMe } from '~/lib/queries';
 import { Button, cx, Pill, Sheet } from './ui';
 
 type Role = 'singer' | 'kj' | 'venue';
@@ -24,11 +24,6 @@ export function PremiumPill({ role }: { role: Role }) {
 /** Upgrade sheet. Payments aren't live yet: production says "coming soon"; the local demo can unlock (and re-lock) any plan. */
 export function UpgradeSheet({ open, onClose, feature }: { open: boolean; onClose: () => void; feature?: string }) {
   const { data: me } = useMe();
-  const set = useAction((on: boolean) => demoUpgrade!(on), {
-    invalidate: [qk.me, qk.booth, ['venue'], ['venues'], ['recs']],
-    success: (_, on) => (on ? `${me ? PLANS[me.role].name : 'Premium'} unlocked for this demo ✨` : 'Back on the free plan'),
-    onSuccess: onClose,
-  });
   if (!me) return null;
   const plan = PLANS[me.role];
   return (
@@ -44,24 +39,15 @@ export function UpgradeSheet({ open, onClose, feature }: { open: boolean; onClos
           ))}
         </ul>
       </div>
-      {!demoUpgrade ? (
+      {DemoPlanSwitch ? (
+        <Suspense>
+          <DemoPlanSwitch onDone={onClose} />
+        </Suspense>
+      ) : (
         <div className="mt-4 text-center">
           <Pill tone="gold">Coming soon</Pill>
           <p className="mt-2 text-xs text-faint">Paid plans aren't available yet. We'll let you know when they are.</p>
         </div>
-      ) : (
-        <>
-          <p className="mt-4 text-xs text-faint">Payments are coming soon. For this demo you can switch the plan on and off freely.</p>
-          {me.isPremium ? (
-            <Button className="mt-3 w-full" loading={set.isPending} onClick={() => set.mutate(false)}>
-              Switch back to free (demo)
-            </Button>
-          ) : (
-            <Button variant="primary" className="mt-3 w-full" loading={set.isPending} onClick={() => set.mutate(true)}>
-              <Sparkles className="size-4" /> Unlock for this demo
-            </Button>
-          )}
-        </>
       )}
     </Sheet>
   );

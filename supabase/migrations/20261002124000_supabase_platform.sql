@@ -7,10 +7,10 @@ create extension if not exists pg_cron with schema pg_catalog;
 select cron.schedule('ks-scheduled-jobs', '*/5 * * * *', 'select app.run_scheduled_jobs()');
 
 -- Media storage -------------------------------------------------------------
--- Public read (gallery photos are public on venue pages); only the API writes, using
+-- Public read (gallery photos, avatars and menu PDFs are public on venue pages); only the API writes, using
 -- the service role, so no insert/update policies are needed.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('media', 'media', true, 10485760, array['image/*', 'video/*'])
+values ('media', 'media', true, 10485760, array['image/*', 'video/*', 'application/pdf'])
 on conflict (id) do nothing;
 
 -- Realtime ------------------------------------------------------------------

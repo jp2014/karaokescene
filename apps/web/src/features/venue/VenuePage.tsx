@@ -1,7 +1,6 @@
-import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { Link, useParams, useRouter } from '@tanstack/react-router';
 import { ArrowLeft, Award, BadgeCheck, CalendarDays, Camera, Check, Clock, FileText, Heart, LogOut, MapPin, Martini, QrCode, Settings2, Share2, Star, Trophy, Users, UtensilsCrossed } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Avatar, AvatarStack } from '~/components/Avatar';
 import { BadgeGrid, BadgeMedal } from '~/components/Badge';
 import { FilePicker } from '~/components/FilePicker';
@@ -15,7 +14,7 @@ import { api, unwrap } from '~/lib/api';
 import { ago, DAYS, DAYS_LONG, dateLabel, duration, hoursLabel, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
 import { useLiveQueries } from '~/lib/realtime';
-import { demoClaim } from '~/lib/demo';
+import { DemoClaimSheet } from '~/lib/demo';
 import { PeakHours } from './PeakHours';
 
 const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scene: 'cyan' } as const;
@@ -464,12 +463,6 @@ function Ratings({ d }: { d: VenueDetail }) {
 function ClaimBanner({ d }: { d: VenueDetail }) {
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const claim = useAction(() => demoClaim!(d.venue.id, qc), {
-    success: (r) => `You now manage ${r.displayName} 🎉`,
-    onSuccess: () => navigate({ to: '/me' }),
-  });
   return (
     <>
       <Card className="mb-5 flex flex-wrap items-center gap-3 border-gold/40 bg-gold/5 p-4">
@@ -478,26 +471,17 @@ function ClaimBanner({ d }: { d: VenueDetail }) {
           <div className="font-semibold">Unclaimed venue</div>
           <div className="text-muted">Listed by {d.venue.createdBy?.displayName ?? 'a KJ'} who hosts karaoke here. Own or run {d.venue.name}?</div>
         </div>
-        {demoClaim && me?.id !== d.venue.createdBy?.id && (
+        {DemoClaimSheet && me?.id !== d.venue.createdBy?.id && (
           <Button size="sm" variant="primary" onClick={() => setOpen(true)}>
             Claim this venue
           </Button>
         )}
       </Card>
-      <Sheet open={open} onClose={() => setOpen(false)} title={`Claim ${d.venue.name}`}>
-        <div className="space-y-4 text-sm">
-          <p className="text-muted">Claiming lets you add photos, hours, specials and coupons, and choose your KJs. The KJ's nights stay on the schedule.</p>
-          <ol className="list-decimal space-y-1.5 pl-5 text-muted">
-            <li>Sign in with your business email.</li>
-            <li>Confirm you're the owner or an authorized operator.</li>
-            <li>We verify with a quick call to the venue's listed phone number.</li>
-          </ol>
-          <div className="rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-3 text-xs text-gold">Demo: verification is skipped. Claiming signs you in as this venue's account.</div>
-          <Button variant="primary" className="w-full" loading={claim.isPending} onClick={() => claim.mutate(undefined)}>
-            I'm the owner · claim {d.venue.name}
-          </Button>
-        </div>
-      </Sheet>
+      {DemoClaimSheet && open && (
+        <Suspense>
+          <DemoClaimSheet venue={d.venue} open onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 }

@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireViewer, type AppEnv } from '../../lib/context.ts';
 import { fail } from '../../lib/http.ts';
+import { requirePremium } from '../../lib/plans.ts';
 import { isStoredMediaUrl } from '../../lib/storage.ts';
 import { VENUE_TYPES } from '../../db/schema.ts';
 import { promo } from '../promo/service.ts';
@@ -61,6 +62,7 @@ export const venueRoutes = new Hono<AppEnv>()
     async (c) => {
       const viewer = requireViewer(c);
       const input = c.req.valid('json');
+      if (input.autoPost) await requirePremium(viewer, 'Drink Special Auto Post');
       const special = await venues.createSpecial(viewer, c.req.param('venueId'), input);
       const posts = input.autoPost ? await promo.autoPostSpecial(viewer, special) : [];
       return c.json({ ...special, autoPosts: posts.length });
