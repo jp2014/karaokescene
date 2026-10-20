@@ -1,4 +1,4 @@
-// Before/after screenshots for the /changes/ page (apps/web/public/changes).
+// Before/after screenshots for the dev-only /changes/ page (apps/web/changes, served by `pnpm dev`).
 //
 // Usage: node scripts/changes/capture.mjs <before|after> <outDir> [only,names]
 //   before: the previous version, e.g. `git worktree add /tmp/ks-old <commit>`, then run its API
@@ -20,9 +20,18 @@ const api = async (path, { token, method = 'GET', body } = {}) => {
   if (!res.ok) throw new Error(`${method} ${path} -> ${res.status} ${await res.text()}`);
   return res.json();
 };
-const signIn = async (userId) => (await api('/auth/demo-sign-in', { method: 'POST', body: { userId } })).token;
+// Demo endpoints live under /api/demo now; older checkouts (for "before" shots) used these paths.
+const demoApi = async (path, legacyPath, opts) => {
+  try {
+    return await api(path, opts);
+  } catch (e) {
+    if (!/-> 404/.test(e.message)) throw e;
+    return api(legacyPath, opts);
+  }
+};
+const signIn = async (userId) => (await demoApi('/demo/sign-in', '/auth/demo-sign-in', { method: 'POST', body: { userId } })).token;
 
-await api('/debug/reset', { method: 'POST' });
+await demoApi('/demo/reset', '/debug/reset', { method: 'POST' });
 const tokens = { singer: await signIn('usr_jess'), kj: await signIn('usr_velvetvox'), venue: await signIn('usr_neon-mic') };
 await api('/presence/check-in', { token: tokens.singer, method: 'POST', body: { venueId: 'ven_neon-mic', method: 'manual' } });
 if (version === 'after') {
@@ -32,7 +41,7 @@ if (version === 'after') {
   await api('/live/submissions', { token: tokens.singer, method: 'POST', body: { songId: inBook[2].id, source: 'roulette' } });
   await api(`/live/submissions/${a.id}/decision`, { token: tokens.kj, method: 'PUT', body: { accept: true } });
 }
-const setPlan = (who, on) => api('/promo/upgrade', { token: tokens[who], method: 'POST', body: { on } });
+const setPlan = (who, on) => demoApi('/demo/upgrade', '/promo/upgrade', { token: tokens[who], method: 'POST', body: { on } });
 
 const browser = await chromium.launch({ channel: 'chrome' });
 const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });

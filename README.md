@@ -42,7 +42,7 @@ Requires Node 22+ and pnpm 10+.
    *Demo controls → Paid plan* switches it off and on.
 7. **Growth loop:** *Scan & Share* shows your QR card; *Demo controls → A new singer joins via my QR* earns Scene Builder badges.
 
-**What changed, with before/after screenshots:** `/changes/` (source: `apps/web/public/changes/`). Add a round there for each feedback cycle; `scripts/changes/capture.mjs` captures the cropped, red-boxed screenshots.
+**What changed, with before/after screenshots:** http://localhost:5173/changes/ while `pnpm dev` is running (source: `apps/web/changes/`; development only, never deployed). Add a round there for every change; `scripts/changes/capture.mjs` captures the cropped, red-boxed screenshots.
 
 **Demo controls** (wrench icon) also include: switching to any of the ~120 accounts, teleporting, time travel, sending a crowd into a venue, and resetting the data.
 
