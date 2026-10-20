@@ -21,10 +21,7 @@ export const demoRoutes = new Hono<AppEnv>()
   .post('/referral', async (c) => c.json(await demo.referralJoin(requireViewer(c))))
   .post('/upgrade', zValidator('json', z.object({ on: z.boolean().default(true) }).default({ on: true })), async (c) => c.json(await demo.upgrade(requireViewer(c), c.req.valid('json').on)))
   // Claim a KJ-listed venue and sign in as its account, skipping owner verification.
-  .post('/claim/:venueId', async (c) => {
-    const v = await venues.claim(c.req.param('venueId'));
-    return c.json(await demo.signIn(v.ownerId));
-  })
+  .post('/claim/:venueId', async (c) => c.json(await demo.claim(c.req.param('venueId'))))
   .put('/premiere/:venueId', zValidator('json', z.object({ on: z.boolean() })), async (c) => {
     await venues.update(requireViewer(c), c.req.param('venueId'), { isPremiere: c.req.valid('json').on });
     return c.json({ ok: true });

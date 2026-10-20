@@ -1,11 +1,8 @@
 import { Link, useSearch } from '@tanstack/react-router';
 import { motion } from 'motion/react';
-import { Suspense, useState } from 'react';
-import { toast } from 'sonner';
-import { AppleIcon, FacebookIcon, GoogleIcon } from '~/components/BrandIcons';
-import { Button } from '~/components/ui';
-import { auth, supabase, type SignInProvider } from '~/lib/auth';
+import { Suspense } from 'react';
 import { DemoPersonas } from '~/lib/demo';
+import { RealSignIn } from './RealSignIn';
 
 export function WelcomePage() {
   const { next } = useSearch({ from: '/welcome' });
@@ -38,14 +35,12 @@ export function WelcomePage() {
           </motion.p>
         </section>
 
-        <section className="mt-12 max-w-md">
-          <SignIn next={next} />
-        </section>
-
-        {DemoPersonas && (
+        {DemoPersonas ? (
           <Suspense>
             <DemoPersonas next={next} />
           </Suspense>
+        ) : (
+          <RealSignIn next={next} />
         )}
       </div>
     </div>
@@ -63,37 +58,6 @@ function FloatingNotes() {
           {n}
         </span>
       ))}
-    </div>
-  );
-}
-
-const PROVIDERS: { id: SignInProvider; label: string; icon: typeof GoogleIcon }[] = [
-  { id: 'google', label: 'Continue with Google', icon: GoogleIcon },
-  { id: 'apple', label: 'Continue with Apple', icon: AppleIcon },
-  { id: 'facebook', label: 'Continue with Facebook', icon: FacebookIcon },
-];
-
-function SignIn({ next }: { next?: string }) {
-  const [busy, setBusy] = useState<SignInProvider | null>(null);
-  if (!supabase) return null;
-  async function go(provider: SignInProvider) {
-    setBusy(provider);
-    try {
-      await auth.signIn(provider, next ?? '/');
-    } catch (e) {
-      toast.error((e as Error).message);
-      setBusy(null);
-    }
-  }
-  return (
-    <div className="space-y-3">
-      <h2 className="mb-4 text-sm font-semibold tracking-widest text-faint uppercase">Join the scene</h2>
-      {PROVIDERS.map((p) => (
-        <Button key={p.id} className="w-full" size="lg" loading={busy === p.id} disabled={!!busy} onClick={() => go(p.id)}>
-          <p.icon className="size-5" /> {p.label}
-        </Button>
-      ))}
-      <p className="text-xs text-faint">New here? Signing in creates your singer profile.</p>
     </div>
   );
 }

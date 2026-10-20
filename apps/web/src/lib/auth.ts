@@ -1,4 +1,4 @@
-import { createClient, type Provider } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -6,7 +6,6 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 /** Supabase (Auth + Realtime). Null when not configured, e.g. a plain local demo. */
 export const supabase = url && anonKey ? createClient(url, anonKey) : null;
 
-export type SignInProvider = Extract<Provider, 'google' | 'apple' | 'facebook'>;
 
 /** A token source that takes precedence over Supabase. Only the local demo's persona sign-in sets one. */
 type TokenOverride = { get(): string | null; clear(): void };
@@ -35,10 +34,25 @@ export const auth = {
     override = o;
   },
 
-  /** Redirects to the provider and back to `next`. */
-  async signIn(provider: SignInProvider, next = '/') {
+  /** Email sign-in, step 1: send a 6-digit code (creates the account on first use). */
+  async sendCode(email: string) {
     if (!supabase) throw new Error('Sign-in is not configured');
-    const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: new URL(next, window.location.origin).href } });
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    if (error) throw error;
+  },
+
+  /** Email sign-in, step 2: the code from the email. */
+  async verifyCode(email: string, code: string) {
+    if (!supabase) throw new Error('Sign-in is not configured');
+    const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+    if (error) throw error;
+    accessToken = data.session?.access_token ?? accessToken;
+  },
+
+  /** Google sign-in: leaves the app and comes back to `returnTo` (a path on this site). */
+  async signInWithGoogle(returnTo: string) {
+    if (!supabase) throw new Error('Sign-in is not configured');
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: new URL(returnTo, window.location.origin).href } });
     if (error) throw error;
   },
 

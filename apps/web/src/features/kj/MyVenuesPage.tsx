@@ -1,14 +1,12 @@
 import { Link } from '@tanstack/react-router';
-import { Building2, CalendarClock, MapPin, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
+import { Building2, CalendarClock, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, cx, EmptyState, PageLoader, Pill, Sheet, Toggle } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
 import { DAYS, dayTimeLabel, endAfter, fromTimeInput, hoursLabel, toTimeInput } from '~/lib/format';
-import { useLocation } from '~/lib/location';
 import { qk, useAction, useMyVenues, type MyVenue } from '~/lib/queries';
-import { DEMO } from '~/lib/demo';
-import { VENUE_TYPES, type VenueType } from '~/lib/venues';
+import { useVenuePlace, VenuePlaceFields } from '~/features/venue/VenuePlaceFields';
 
 type Night = { dayOfWeek: number; startMin: number; endMin: number };
 
@@ -162,56 +160,23 @@ function NightRow({ night, onChange, onRemove }: { night: Night; onChange: (p: P
 
 /** KJs can list a venue whose owner isn't on Karaoke Scene yet. */
 function AddVenueSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const loc = useLocation();
-  const [form, setForm] = useState({ name: '', address: '', neighborhood: '', city: 'Omaha' });
-  const [types, setTypes] = useState<VenueType[]>(['Bar']);
+  const placeState = useVenuePlace();
   const [night, setNight] = useState<Night>({ dayOfWeek: 2, startMin: 21 * 60, endMin: 25 * 60 });
-  const create = useAction(
-    // The pin is your real GPS position, so add the venue while you're there. The demo scatters
-    // pins around the simulated location instead.
-    () => {
-      const at = DEMO ? { lat: loc.current.lat + (Math.random() - 0.5) * 0.004, lng: loc.current.lng + (Math.random() - 0.5) * 0.004 } : loc.current;
-      return unwrap(api.venues.$post({ json: { ...form, venueTypes: types, nights: [night], ...at } }));
-    },
-    {
-      invalidate: [qk.myVenues, qk.booth, ['venues']],
-      success: (v) => `${v.name} is on the map 🎉`,
-      onSuccess: () => {
-        onClose();
-        setForm({ name: '', address: '', neighborhood: '', city: 'Omaha' });
-      },
-    },
-  );
-  const set = (k: keyof typeof form, v: string) => setForm({ ...form, [k]: v });
+  const create = useAction(() => unwrap(api.venues.$post({ json: { ...placeState.place, nights: [night] } })), {
+    invalidate: [qk.myVenues, qk.booth, ['venues']],
+    success: (v) => `${v.name} is on the map 🎉`,
+    onSuccess: onClose,
+  });
   return (
     <Sheet open={open} onClose={onClose} title="Add a venue">
       <p className="mb-4 text-sm text-muted">Host somewhere that isn't on Karaoke Scene yet? Add it so singers can find your night. The owner can claim the listing later.</p>
       <div className="space-y-3">
-        <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Venue name" className="w-full" />
-        <input value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Street address" className="w-full" />
-        <div className="flex gap-2">
-          <input value={form.neighborhood} onChange={(e) => set('neighborhood', e.target.value)} placeholder="Neighborhood" className="min-w-0 flex-1" />
-          <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City" className="min-w-0 flex-1" />
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <MapPin className="size-3.5" />
-          {loc.known ? `Pinned at your current location${DEMO ? ` (${loc.label})` : ''}` : 'Turn on location and add the venue while you’re there, so singers find the right spot.'}
-        </div>
-        <div>
-          <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Venue type</div>
-          <div className="flex flex-wrap gap-1.5">
-            {VENUE_TYPES.map((t) => (
-              <button key={t} onClick={() => setTypes(types.includes(t) ? types.filter((x) => x !== t) : [...types, t])} className={cx('rounded-full border px-3 py-1.5 text-xs font-semibold', types.includes(t) ? 'border-pink bg-pink/15' : 'border-line text-muted')}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
+        {open && <VenuePlaceFields state={placeState} />}
         <div>
           <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Your karaoke night</div>
           <NightRow night={night} onChange={(p) => setNight({ ...night, ...p })} />
         </div>
-        <Button variant="primary" className="w-full" disabled={!loc.known || form.name.trim().length < 2 || form.address.trim().length < 3} loading={create.isPending} onClick={() => create.mutate(undefined)}>
+        <Button variant="primary" className="w-full" disabled={!placeState.valid} loading={create.isPending} onClick={() => create.mutate(undefined)}>
           Add venue
         </Button>
       </div>

@@ -21,5 +21,29 @@ port = 55423
 [inbucket]
 port = 55424
 
+# Sign-in: a 6-digit email code (no magic links) or Google. `npx supabase config push` applies
+# the [auth] settings to the hosted project; the Google secret comes from the environment.
+[auth]
+site_url = "http://localhost:5174"
+additional_redirect_urls = ["http://localhost:5173/**", "http://localhost:5174/**"]
+
+[auth.email]
+otp_length = 6
+otp_expiry = 3600
+
+[auth.email.template.magic_link]
+subject = "Your Karaoke Scene code"
+content_path = "./supabase/templates/email-code.html"
+
+[auth.email.template.confirmation]
+subject = "Your Karaoke Scene code"
+content_path = "./supabase/templates/email-code.html"
+
+[auth.external.google]
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+skip_nonce_check = false
+
 [analytics]
 enabled = false

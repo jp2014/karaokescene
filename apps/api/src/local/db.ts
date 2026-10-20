@@ -19,12 +19,13 @@ export function loadLocalEnv() {
 
 /**
  * Local database: embedded Postgres (PGlite) in apps/api/data/pglite, or DATABASE_URL for
- * a real server. Runs the same migrations Supabase gets.
+ * a real server. Runs the same migrations Supabase gets (unless DATABASE_MIGRATE=off).
  */
 export async function connectLocalDb() {
   if (process.env.DATABASE_URL) {
     const d = drizzlePostgres(postgres(process.env.DATABASE_URL, { max: 5, onnotice: () => {} }), { schema });
-    await migratePostgres(d, { migrationsFolder });
+    // DATABASE_MIGRATE=off for a database the Supabase CLI already migrated (e.g. the local stack).
+    if (process.env.DATABASE_MIGRATE !== 'off') await migratePostgres(d, { migrationsFolder });
     setDb(d as unknown as DB);
   } else {
     const d = drizzlePglite(new PGlite(resolve(apiRoot, 'data/pglite')), { schema });

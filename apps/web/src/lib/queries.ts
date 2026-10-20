@@ -8,6 +8,7 @@ import { auth } from './auth';
  * notifications, venue crowds) is refreshed by Realtime signals, not polling: see useRealtimeSync.
  */
 export const qk = {
+  session: ['session'] as const,
   me: ['me'] as const,
   venues: (f: object) => ['venues', f] as const,
   venue: (slug: string) => ['venue', slug] as const,
@@ -30,6 +31,10 @@ export const useMe = () =>
   useQuery({ queryKey: qk.me, queryFn: () => unwrap(api.profiles.me.$get()), enabled: signedIn(), retry: false, staleTime: 10_000 });
 
 export type Me = NonNullable<ReturnType<typeof useMe>['data']>;
+
+/** Signed out, signed in but not onboarded (no role yet), or ready. */
+export const sessionQuery = { queryKey: qk.session, queryFn: () => unwrap(api.profiles.session.$get()), staleTime: 60_000 };
+export const useSession = () => useQuery({ ...sessionQuery, enabled: signedIn() });
 
 export type VenueFilters = {
   lat?: number;

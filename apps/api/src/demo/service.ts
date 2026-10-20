@@ -3,7 +3,7 @@ import { db, schema } from '../db/client.ts';
 import { toCard } from '../lib/cards.ts';
 import { clock, localParts } from '../lib/clock.ts';
 import type { User } from '../lib/context.ts';
-import { notFound } from '../lib/http.ts';
+import { fail, notFound } from '../lib/http.ts';
 import { newId } from '../lib/ids.ts';
 import { DEFAULT_PRIVACY, profiles } from '../modules/profiles/service.ts';
 import { presence } from '../modules/presence/service.ts';
@@ -40,6 +40,14 @@ export const demo = {
   },
 
   reset: () => seed(),
+
+  /** Claim a KJ-listed venue without verification and continue as its account. */
+  async claim(venueId: string) {
+    const v = (await venues.byId(venueId)) ?? notFound('Venue');
+    if (v!.claimed) fail(409, 'This venue has already been claimed');
+    await db.update(schema.venues).set({ claimed: true, claimedAt: clock.now() }).where(eq(schema.venues.id, venueId));
+    return demo.signIn(v!.ownerId);
+  },
 
   clockState() {
     const now = clock.now();

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { requireViewer, type AppEnv } from '../../lib/context.ts';
+import { requireIdentity, requireViewer, type AppEnv } from '../../lib/context.ts';
 import { isStoredMediaUrl } from '../../lib/storage.ts';
 import { profiles } from './service.ts';
 
@@ -22,6 +22,17 @@ const patch = z.object({
 }).partial();
 
 export const profileRoutes = new Hono<AppEnv>()
+  /** Where this caller stands: signed out, signed in but not onboarded, or ready (with their profile). */
+  .get('/session', async (c) => {
+    const viewer = c.get('viewer');
+    const identity = c.get('identity');
+    if (viewer) return c.json({ status: 'ready' as const, email: identity?.email ?? null, me: await profiles.me(viewer) });
+    if (identity) return c.json({ status: 'onboarding' as const, email: identity.email, name: identity.name, me: null });
+    return c.json({ status: 'signed-out' as const, email: null, me: null });
+  })
+  .post('/onboard', zValidator('json', z.object({ role: z.enum(['singer', 'kj', 'venue']), displayName: z.string().max(40).optional() })), async (c) =>
+    c.json(await profiles.me(await profiles.onboard(requireIdentity(c), c.req.valid('json')))),
+  )
   .get('/me', async (c) => c.json(await profiles.me(requireViewer(c))))
   .patch('/me', zValidator('json', patch), async (c) => c.json(await profiles.update(requireViewer(c), c.req.valid('json'))))
   .get('/search', async (c) => c.json(await profiles.search(c.get('viewer'), c.req.query('q') ?? '')))

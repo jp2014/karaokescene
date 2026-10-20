@@ -11,6 +11,7 @@ import { Button, Card, cx, PageLoader, Section, Segmented, Toggle } from '~/comp
 import { api, unwrap } from '~/lib/api';
 import { DAYS_LONG } from '~/lib/format';
 import { qk, useAction, useMe, type Me } from '~/lib/queries';
+import { VenueSetup } from '~/features/hq/VenueSetup';
 import { VenueSettings } from './VenueSettings';
 
 type Vis = 'everyone' | 'friends' | 'nobody';
@@ -29,7 +30,7 @@ const AGES = ['21–24', '25–29', '30–34', '35–44', '45–54', '55+'];
 export function MePage() {
   const { data: me } = useMe();
   if (!me) return <PageLoader />;
-  if (me.role === 'venue') return <VenueSettings me={me} key={me.id} />;
+  if (me.role === 'venue') return me.venue ? <VenueSettings me={me} key={me.id} /> : <VenueSetup />;
   return <MeEditor me={me} key={me.id} />;
 }
 

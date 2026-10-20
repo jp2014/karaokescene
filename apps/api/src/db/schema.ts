@@ -63,6 +63,8 @@ export const venues = table('venues', {
   claimed: boolean('claimed').notNull().default(true),
   /** The KJ who listed this venue, when it wasn't created by its owner. */
   createdById: text('created_by_id'),
+  /** When the owner claimed a KJ-listed venue (self-serve, so it's recorded). */
+  claimedAt: ts('claimed_at'),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   tagline: text('tagline').notNull().default(''),

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."venues" ADD COLUMN "claimed_at" bigint;

@@ -7,7 +7,7 @@ import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
 import type { AuthIdentity } from '../../lib/auth.ts';
 import { hasPremium, PLAN_NAME } from '../../lib/plans.ts';
-import type { PrivacySettings } from '../../db/schema.ts';
+import type { PrivacySettings, Role } from '../../db/schema.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
 import { social } from '../social/service.ts';
@@ -31,12 +31,21 @@ export type ProfilePatch = Partial<
 
 /** Identity + profile assembly. Everything privacy-related about a person is decided here. */
 export const profiles = {
-  /** The profile behind a Supabase Auth user, created as a singer on first sign-in. */
-  async forAuthIdentity(identity: AuthIdentity): Promise<User> {
-    const existing = await db.query.users.findFirst({ where: eq(schema.users.authId, identity.authId) });
+  /** The profile behind a Supabase Auth user, if they've finished onboarding. */
+  async byAuthId(authId: string): Promise<User | null> {
+    return (await db.query.users.findFirst({ where: eq(schema.users.authId, authId) })) ?? null;
+  },
+
+  /**
+   * First sign-in: create the profile with the role they picked. Idempotent: someone who
+   * already has a profile just gets it back (the role is chosen once).
+   */
+  async onboard(identity: AuthIdentity, input: { role: Role; displayName?: string }): Promise<User> {
+    const existing = await profiles.byAuthId(identity.authId);
     if (existing) return existing;
-    const displayName = (identity.name ?? identity.email?.split('@')[0] ?? 'New Singer').slice(0, 40);
-    const base = slugify(identity.name ?? identity.email?.split('@')[0] ?? '') || 'singer';
+    const fallback = { singer: 'New Singer', kj: 'New KJ', venue: 'New Venue' }[input.role];
+    const displayName = (input.displayName?.trim() || identity.name || identity.email?.split('@')[0] || fallback).slice(0, 40);
+    const base = slugify(displayName) || input.role;
     // A concurrent first request may create the row first; the handle may already be taken.
     for (let attempt = 0; attempt < 5; attempt++) {
       const handle = attempt === 0 ? base : `${base}${Math.floor(Math.random() * 9000) + 1000}`;
@@ -45,7 +54,8 @@ export const profiles = {
         .values({
           id: newId('usr'),
           authId: identity.authId,
-          role: 'singer',
+          role: input.role,
+          avatarEmoji: { singer: '🎤', kj: '🎧', venue: '🍸' }[input.role],
           handle,
           displayName,
           avatarHue: Math.floor(Math.random() * 360),

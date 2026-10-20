@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray } from 'drizzle-orm';
 import { db, isUniqueViolation, schema } from '../../db/client.ts';
 import { cardsById } from '../../lib/cards.ts';
 import { addDays, clock, localParts } from '../../lib/clock.ts';
@@ -7,6 +7,8 @@ import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
 import { DEFAULT_PRIVACY } from '../profiles/privacy.ts';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import { notifications } from '../notifications/service.ts';
 import { liveNight, tonight } from './schedule.ts';
 
 const V = schema.venues;
@@ -15,7 +17,7 @@ const N = schema.karaokeNights;
 export type Venue = typeof V.$inferSelect;
 export type NightInput = { dayOfWeek: number; startMin: number; endMin: number };
 export type VenueProfilePatch = Partial<
-  Pick<Venue, 'name' | 'tagline' | 'description' | 'isPremiere' | 'photoUrl' | 'venueTypes' | 'hours' | 'happyHours' | 'foodAvailable' | 'menuUrl'>
+  Pick<Venue, 'name' | 'tagline' | 'description' | 'isPremiere' | 'photoUrl' | 'venueTypes' | 'hours' | 'happyHours' | 'foodAvailable' | 'menuUrl' | 'lat' | 'lng'>
 >;
 
 const slugify = (name: string) =>
@@ -32,6 +34,11 @@ async function linkedKj(kj: User, venueId: string) {
   const link = await db.query.kjVenueLinks.findFirst({ where: and(eq(L.kjId, kj.id), eq(L.venueId, venueId)) });
   if (!link) fail(403, "You don't host at this venue");
   return link!;
+}
+
+/** The schema property name of a column (what `.set({...})` expects), from the column object. */
+function colKey(t: PgTable, col: PgColumn) {
+  return Object.entries(t).find(([, c]) => c === col)![0];
 }
 
 async function owned(viewer: User, venueId: string) {
@@ -117,12 +124,78 @@ export const venues = {
     return fail(409, 'Could not create that venue, please try again');
   },
 
-  /** Owner claims a KJ-listed venue. (The real app verifies the owner first; see the claim sheet.) */
-  async claim(venueId: string) {
+  /** KJ-listed venues still waiting for their owner, for the claim search. */
+  async unclaimed(q: string) {
+    const term = q.trim();
+    const rows = await db.select().from(V).where(and(eq(V.claimed, false), term ? ilike(V.name, `%${term}%`) : undefined)).orderBy(asc(V.name)).limit(20);
+    const kjs = await cardsById(rows.map((r) => r.createdById).filter((x): x is string => !!x));
+    return rows.map((v) => ({ id: v.id, slug: v.slug, name: v.name, address: v.address, city: v.city, hue: v.hue, photoUrl: v.photoUrl, createdBy: v.createdById ? (kjs.get(v.createdById) ?? null) : null }));
+  },
+
+  /** A venue account adds its own venue (one per account). */
+  async createByOwner(owner: User, input: { name: string; address: string; neighborhood: string; city: string; lat: number; lng: number; venueTypes: VenueType[] }) {
+    if (owner.role !== 'venue') fail(403, 'Only venue accounts can add their own venue');
+    if (await venues.ownedBy(owner.id)) fail(409, 'This account already manages a venue');
+    const base = slugify(input.name) || 'venue';
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const slug = attempt === 0 ? base : `${base}-${Math.floor(Math.random() * 9000 + 1000)}`;
+      if (await venues.bySlug(slug)) continue;
+      const venue = {
+        id: newId('ven'), ownerId: owner.id, claimed: true, createdById: null, slug, name: input.name, tagline: '', description: '', address: input.address,
+        neighborhood: input.neighborhood || input.city, city: input.city, lat: input.lat, lng: input.lng, hue: owner.avatarHue, isPremiere: false, capacity: 80, vibes: [], venueTypes: input.venueTypes,
+      };
+      const created = await db
+        .insert(V)
+        .values(venue)
+        .then(() => true)
+        .catch((err) => (isUniqueViolation(err) ? false : Promise.reject(err)));
+      if (!created) continue;
+      // The venue account goes by the venue's name.
+      await db.update(schema.users).set({ displayName: input.name, lat: input.lat, lng: input.lng }).where(eq(schema.users.id, owner.id));
+      return venue;
+    }
+    return fail(409, 'Could not create that venue, please try again');
+  },
+
+  /**
+   * Self-serve claim of a KJ-listed venue. The claimant's sign-in moves onto the listing's
+   * placeholder account, so ratings, badges and favorites already on the venue carry over.
+   * Anything the claimant's own (new) account did moves with them. The listing KJ is told.
+   */
+  async claim(claimant: User, venueId: string) {
+    if (claimant.role !== 'venue' || !claimant.authId) fail(403, 'Sign in with a venue account to claim a venue');
+    if (await venues.ownedBy(claimant.id)) fail(409, 'This account already manages a venue');
     const v = (await venues.byId(venueId)) ?? notFound('Venue');
-    if (v!.claimed) fail(409, 'This venue has already been claimed');
-    await db.update(V).set({ claimed: true }).where(eq(V.id, venueId));
-    return v!;
+    const from = claimant.id;
+    const to = v!.ownerId;
+    await db.transaction(async (tx) => {
+      // Re-check under a row lock so two claimants can't both win.
+      const [locked] = await tx.select().from(V).where(eq(V.id, venueId)).for('update');
+      if (!locked || locked.claimed) fail(409, 'This venue has already been claimed');
+      const S = schema;
+      const moves: [PgTable, PgColumn][] = [
+        [S.checkins, S.checkins.userId], [S.rsvps, S.rsvps.userId], [S.galleryItems, S.galleryItems.uploaderId], [S.songListEntries, S.songListEntries.userId],
+        [S.songRequests, S.songRequests.singerId], [S.coupons, S.coupons.singerId], [S.badgeAwards, S.badgeAwards.recipientId], [S.badgeAwards, S.badgeAwards.giverId],
+        [S.praise, S.praise.fromId], [S.praise, S.praise.toId], [S.friendships, S.friendships.requesterId], [S.friendships, S.friendships.addresseeId],
+        [S.favorites, S.favorites.userId], [S.blocks, S.blocks.userId], [S.blocks, S.blocks.blockedId], [S.notifications, S.notifications.userId],
+        [S.promoPosts, S.promoPosts.authorId], [S.pushTokens, S.pushTokens.userId], [S.users, S.users.referredById],
+      ];
+      for (const [t, col] of moves) await tx.update(t).set({ [colKey(t, col)]: to }).where(eq(col, from));
+      await tx.update(S.favorites).set({ targetId: to }).where(and(eq(S.favorites.targetType, 'user'), eq(S.favorites.targetId, from)));
+      // Relationships between the two accounts would now point at themselves.
+      await tx.delete(S.friendships).where(and(eq(S.friendships.requesterId, to), eq(S.friendships.addresseeId, to)));
+      await tx.delete(S.blocks).where(and(eq(S.blocks.userId, to), eq(S.blocks.blockedId, to)));
+      await tx.delete(S.favorites).where(and(eq(S.favorites.userId, to), eq(S.favorites.targetType, 'user'), eq(S.favorites.targetId, to)));
+      // Hand over the sign-in: free the unique auth_id first, then remove the empty account.
+      await tx.update(S.users).set({ authId: null }).where(eq(S.users.id, from));
+      await tx.update(S.users).set({ authId: claimant.authId }).where(eq(S.users.id, to));
+      await tx.delete(S.users).where(eq(S.users.id, from));
+      await tx.update(V).set({ claimed: true, claimedAt: clock.now() }).where(eq(V.id, venueId));
+    });
+    if (v!.createdById) {
+      await notifications.send(v!.createdById, { kind: 'venue-claimed', title: `🏠 ${v!.name} was claimed`, body: 'The owner now manages the venue page. Your nights stay on the schedule.', link: `/venues/${v!.slug}` });
+    }
+    return (await db.query.users.findFirst({ where: eq(schema.users.id, to) }))!;
   },
 
   /** KJs manage their own nights at a venue (the owner's other KJs are untouched). */

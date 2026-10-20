@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { DEMO } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { Award, CalendarPlus, Crown, ExternalLink, Lock, Martini, Megaphone, Star, Ticket, Trash2, Trophy, Users } from 'lucide-react';
 import { useState } from 'react';
@@ -14,12 +13,14 @@ import { AwardBadgeSheet } from '~/features/profile/ProfileActions';
 import { AutoPostCard } from '~/features/promo/AutoPostCard';
 import { api, unwrap } from '~/lib/api';
 import { ago, dateLabel, DAYS, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
+import { VenueSetup } from './VenueSetup';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
 
 export function VenueHqPage() {
   const { data: me } = useMe();
   const { data: d } = useVenue(me?.venue?.slug ?? '');
-  if (!me?.venue) return <EmptyState icon="🏠" title="No venue linked" body={DEMO ? 'Switch to a venue account from Demo controls.' : 'This account isn’t linked to a venue yet. Contact us to claim your venue.'} />;
+  if (!me) return <PageLoader />;
+  if (!me.venue) return <VenueSetup />;
   if (!d) return <PageLoader />;
   return <Hq d={d} />;
 }

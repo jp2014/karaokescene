@@ -8,6 +8,8 @@ import { realtime } from '../../lib/realtime.ts';
 
 export type NotificationKind =
   | 'auto-leave'
+  | 'venue-claimed'
+  | 'promo-reminder'
   | 'check-in'
   | 'badge'
   | 'praise'

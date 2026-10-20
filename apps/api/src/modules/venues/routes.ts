@@ -9,6 +9,14 @@ import { VENUE_TYPES } from '../../db/schema.ts';
 import { promo } from '../promo/service.ts';
 import { venues } from './service.ts';
 
+const place = {
+  name: z.string().min(2).max(60),
+  address: z.string().min(3).max(120),
+  neighborhood: z.string().max(60).default(''),
+  city: z.string().min(2).max(60),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+};
 const night = z.object({ dayOfWeek: z.number().int().min(0).max(6), startMin: z.number().int().min(0).max(1439), endMin: z.number().int().min(1).max(2880) });
 const venueTypes = z.array(z.enum(VENUE_TYPES)).max(VENUE_TYPES.length);
 /** Photos must be files uploaded through /api/media; a menu can also be a link to the venue's own site. */
@@ -23,19 +31,17 @@ export const venueRoutes = new Hono<AppEnv>()
     '/',
     zValidator(
       'json',
-      z.object({
-        name: z.string().min(2).max(60),
-        address: z.string().min(3).max(120),
-        neighborhood: z.string().max(60).default(''),
-        city: z.string().min(2).max(60),
-        lat: z.number().min(-90).max(90),
-        lng: z.number().min(-180).max(180),
-        venueTypes: venueTypes.default([]),
-        nights: z.array(night).max(7).default([]),
-      }),
+      z.object({ ...place, venueTypes: venueTypes.default([]), nights: z.array(night).max(7).default([]) }),
     ),
     async (c) => c.json(await venues.createByKj(requireViewer(c, 'kj'), c.req.valid('json'))),
   )
+  // Venue accounts: add your own venue, or find and claim the listing a KJ already made.
+  .post('/own', zValidator('json', z.object({ ...place, venueTypes: venueTypes.default([]) })), async (c) => c.json(await venues.createByOwner(requireViewer(c, 'venue'), c.req.valid('json'))))
+  .get('/unclaimed', zValidator('query', z.object({ q: z.string().max(60).default('') })), async (c) => c.json(await venues.unclaimed(c.req.valid('query').q)))
+  .post('/:venueId/claim', async (c) => {
+    await venues.claim(requireViewer(c, 'venue'), c.req.param('venueId'));
+    return c.json({ ok: true });
+  })
   .put('/:venueId/my-nights', zValidator('json', z.object({ nights: z.array(night).max(14) })), async (c) => {
     await venues.setKjNights(requireViewer(c, 'kj'), c.req.param('venueId'), c.req.valid('json').nights);
     return c.json({ ok: true });
@@ -94,6 +100,8 @@ export const venueRoutes = new Hono<AppEnv>()
           tagline: z.string().max(80),
           description: z.string().max(600),
           photoUrl: storedMedia.nullable(),
+          lat: place.lat,
+          lng: place.lng,
           venueTypes,
           hours: z.array(z.object({ day: z.number().int().min(0).max(6), openMin: z.number().int().min(0).max(1439), closeMin: z.number().int().min(1).max(2880) })).max(7),
           happyHours: z.array(z.object({ days: z.array(z.number().int().min(0).max(6)).min(1), startMin: z.number().int().min(0).max(1439), endMin: z.number().int().min(1).max(2880), details: z.string().max(120) })).max(10),

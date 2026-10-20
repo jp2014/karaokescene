@@ -63,13 +63,14 @@ export function StepCard({ children, onBack, title, icon }: { children: ReactNod
   );
 }
 
-export function EmailStep({ role, busy, onBack, onNext }: { role: Role; busy?: boolean; onBack: () => void; onNext: (email: string) => void }) {
+/** `role` is unset for a returning user signing in; `children` render below the form (e.g. Google). */
+export function EmailStep({ role, busy, onBack, onNext, children }: { role?: Role; busy?: boolean; onBack: () => void; onNext: (email: string) => void; children?: ReactNode }) {
   const [email, setEmail] = useState('');
   const [legit, setLegit] = useState(false);
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const label = ROLES.find((r) => r.role === role)!.label;
+  const label = ROLES.find((r) => r.role === role)?.label;
   return (
-    <StepCard onBack={onBack} title={role === 'venue' ? 'Venue sign in' : `${label} sign in`} icon={<Mail className="size-5" />}>
+    <StepCard onBack={onBack} title={!label ? 'Sign in' : role === 'venue' ? 'Venue sign in' : `${label} sign in`} icon={<Mail className="size-5" />}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -95,6 +96,7 @@ export function EmailStep({ role, busy, onBack, onNext }: { role: Role; busy?: b
         </Button>
         <p className="text-center text-xs text-faint">New here? The same code creates your account.</p>
       </form>
+      {children}
     </StepCard>
   );
 }
