@@ -31,6 +31,38 @@ export function busyLevel(count: number, capacity: number): BusyLevel {
   return r >= 1 ? 'packed' : r >= 0.55 ? 'busy' : r >= 0.2 ? 'warming-up' : 'quiet';
 }
 
+type Checkin = typeof C.$inferSelect;
+type Closed = { current: Checkin; kj: typeof K.$inferSelect | null; dropped: unknown[] };
+
+/** Inside the user's lock: end the check-in and withdraw their pending song submissions. */
+async function closeCheckin(tx: DB, userId: string, current: Checkin, reason: 'manual' | 'auto-leave'): Promise<Closed> {
+  await tx.update(C).set({ checkedOutAt: clock.now(), checkoutReason: reason }).where(eq(C.id, current.id));
+  const kj = await presence.activeKjSession(current.venueId, tx);
+  const dropped = kj
+    ? await tx
+        .update(schema.songRequests)
+        .set({ status: 'withdrawn', decidedAt: clock.now() })
+        .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, userId), eq(schema.songRequests.status, 'submitted')))
+        .returning()
+    : [];
+  return { current, kj, dropped };
+}
+
+/** After the lock is released: realtime signals, and the Auto Leave alert (a KJ Pro feature). */
+async function afterCheckout(user: User, { current, kj, dropped }: Closed, reason: 'manual' | 'auto-leave') {
+  realtime.presenceChanged(current.venueId);
+  if (!kj || reason !== 'auto-leave') return;
+  const kjUser = await db.query.users.findFirst({ where: eq(schema.users.id, kj.kjId) });
+  if (kjUser && (await hasPremium(kjUser))) {
+    await notifications.send(kj.kjId, {
+      kind: 'auto-leave',
+      title: `🚪 ${user.ghostMode ? 'A ghost singer' : user.displayName} left the venue`,
+      body: dropped.length ? `Auto Leave withdrew ${dropped.length} pending song${dropped.length > 1 ? 's' : ''}` : 'Auto Leave: they walked out of range',
+      link: '/kj',
+    });
+  }
+}
+
 export const presence = {
   async currentCheckin(userId: string, q: DB = db) {
     const row = await q.query.checkins.findFirst({ where: and(eq(C.userId, userId), activeCheckinWhere()) });
@@ -73,11 +105,19 @@ export const presence = {
 
   async checkIn(user: User, venueId: string, method: 'geo' | 'qr' | 'manual') {
     const venue = (await venues.byId(venueId)) ?? notFound('Venue');
-    const current = await presence.currentCheckin(user.id);
-    if (current?.venueId === venueId) return current;
-    if (current) await presence.checkOut(user, 'manual');
-    const row = { id: newId('chk'), userId: user.id, venueId, method, checkedInAt: clock.now(), checkedOutAt: null, checkoutReason: null };
-    await db.insert(C).values(row);
+    // Under the user's lock (shared with checkout and song submission) so two check-ins at once
+    // can't leave two open rows.
+    const result = await withUserLock(user.id, async (tx) => {
+      const current = await presence.currentCheckin(user.id, tx);
+      if (current?.venueId === venueId) return { row: current, left: null };
+      const left = current ? await closeCheckin(tx, user.id, current, 'manual') : null;
+      const row = { id: newId('chk'), userId: user.id, venueId, method, checkedInAt: clock.now(), checkedOutAt: null, checkoutReason: null };
+      await tx.insert(C).values(row);
+      return { row, left, created: true };
+    });
+    if (result.left) await afterCheckout(user, result.left, 'manual');
+    if (!('created' in result)) return result.row;
+    const { row } = result;
     realtime.presenceChanged(venueId);
     if (user.role === 'singer') {
       const visits = await presence.visitCount(user.id, venueId);
@@ -102,36 +142,14 @@ export const presence = {
    * (geofence exit) also alerts the KJ, a KJ Pro feature.
    */
   async checkOut(user: User, reason: 'manual' | 'auto-leave') {
-    // Same lock as song submission, so a submission can't land after its singer has left.
+    // Same lock as song submission and check-in, so nothing lands after the singer has left.
     const done = await withUserLock(user.id, async (tx) => {
       const current = await presence.currentCheckin(user.id, tx);
-      if (!current) return null;
-      await tx.update(C).set({ checkedOutAt: clock.now(), checkoutReason: reason }).where(eq(C.id, current.id));
-      const kj = await presence.activeKjSession(current.venueId, tx);
-      const dropped = kj
-        ? await tx
-            .update(schema.songRequests)
-            .set({ status: 'withdrawn', decidedAt: clock.now() })
-            .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, user.id), eq(schema.songRequests.status, 'submitted')))
-            .returning()
-        : [];
-      return { current, kj, dropped };
+      return current ? closeCheckin(tx, user.id, current, reason) : null;
     });
     if (!done) return null;
-    const { current, kj, dropped } = done;
-    realtime.presenceChanged(current.venueId);
-    if (kj) {
-      const kjUser = reason === 'auto-leave' ? await db.query.users.findFirst({ where: eq(schema.users.id, kj.kjId) }) : undefined;
-      if (kjUser && (await hasPremium(kjUser))) {
-        await notifications.send(kj.kjId, {
-          kind: 'auto-leave',
-          title: `🚪 ${user.ghostMode ? 'A ghost singer' : user.displayName} left the venue`,
-          body: dropped.length ? `Auto Leave withdrew ${dropped.length} pending song${dropped.length > 1 ? 's' : ''}` : 'Auto Leave: they walked out of range',
-          link: '/kj',
-        });
-      }
-    }
-    return { ...current, checkoutReason: reason };
+    await afterCheckout(user, done, reason);
+    return { ...done.current, checkoutReason: reason };
   },
 
   /**
