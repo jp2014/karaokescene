@@ -141,11 +141,13 @@ export const presence = {
    * Ends the user's check-in and withdraws their pending song submissions. Auto Leave
    * (geofence exit) also alerts the KJ, a KJ Pro feature.
    */
-  async checkOut(user: User, reason: 'manual' | 'auto-leave') {
+  async checkOut(user: User, reason: 'manual' | 'auto-leave', onlyCheckinId?: string) {
     // Same lock as song submission and check-in, so nothing lands after the singer has left.
+    // `onlyCheckinId`: the caller decided based on that check-in; leave a newer one alone.
     const done = await withUserLock(user.id, async (tx) => {
       const current = await presence.currentCheckin(user.id, tx);
-      return current ? closeCheckin(tx, user.id, current, reason) : null;
+      if (!current || (onlyCheckinId && current.id !== onlyCheckinId)) return null;
+      return closeCheckin(tx, user.id, current, reason);
     });
     if (!done) return null;
     await afterCheckout(user, done, reason);
@@ -163,8 +165,13 @@ export const presence = {
     if (current) {
       const v = (await venues.byId(current.venueId))!;
       if (distanceMi(loc, v) > LEAVE_RADIUS_MI) {
-        await presence.checkOut(user, 'auto-leave');
-        autoLeft = { venueId: v.id, name: v.name };
+        // Only this check-in: if the singer checked in somewhere else meanwhile, that one stands.
+        if (await presence.checkOut(user, 'auto-leave', current.id)) autoLeft = { venueId: v.id, name: v.name };
+        else {
+          const now = await presence.currentCheckin(user.id);
+          const nv = now && (await venues.byId(now.venueId));
+          if (nv) return { autoLeft, arrivedAt: null, checkedInAt: { venueId: nv.id, name: nv.name, slug: nv.slug } };
+        }
       } else {
         return { autoLeft, arrivedAt: null, checkedInAt: { venueId: v.id, name: v.name, slug: v.slug } };
       }
