@@ -6,3 +6,20 @@ project_id = "karaokescene"
 entrypoint = "./functions/api/index.js"
 # The API verifies Supabase tokens itself and serves some routes to signed-out visitors.
 verify_jwt = false
+
+# Local stack (`npx supabase start`) on its own ports so it can run beside other projects.
+[api]
+port = 55421
+
+[db]
+port = 55422
+shadow_port = 55420
+
+[studio]
+port = 55423
+
+[inbucket]
+port = 55424
+
+[analytics]
+enabled = false

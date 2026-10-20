@@ -1,10 +1,11 @@
 import { and, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
-import { db, schema } from '../../db/client.ts';
+import { db, schema, type DB } from '../../db/client.ts';
 import { cardsById, toCard, type UserCard } from '../../lib/cards.ts';
 import { clock, localParts } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { ARRIVE_RADIUS_MI, distanceMi, LEAVE_RADIUS_MI, type LatLng } from '../../lib/geo.ts';
 import { fail, notFound } from '../../lib/http.ts';
+import { withUserLock } from '../../lib/locks.ts';
 import { hasPremium } from '../../lib/plans.ts';
 import { newId } from '../../lib/ids.ts';
 import { realtime } from '../../lib/realtime.ts';
@@ -31,13 +32,13 @@ export function busyLevel(count: number, capacity: number): BusyLevel {
 }
 
 export const presence = {
-  async currentCheckin(userId: string) {
-    const row = await db.query.checkins.findFirst({ where: and(eq(C.userId, userId), activeCheckinWhere()) });
+  async currentCheckin(userId: string, q: DB = db) {
+    const row = await q.query.checkins.findFirst({ where: and(eq(C.userId, userId), activeCheckinWhere()) });
     return row ?? null;
   },
 
-  async activeKjSession(venueId: string) {
-    return (await db.query.kjSessions.findFirst({ where: and(eq(K.venueId, venueId), activeKjWhere()) })) ?? null;
+  async activeKjSession(venueId: string, q: DB = db) {
+    return (await q.query.kjSessions.findFirst({ where: and(eq(K.venueId, venueId), activeKjWhere()) })) ?? null;
   },
 
   async kjSessionFor(kjId: string) {
@@ -101,17 +102,25 @@ export const presence = {
    * (geofence exit) also alerts the KJ, a KJ Pro feature.
    */
   async checkOut(user: User, reason: 'manual' | 'auto-leave') {
-    const current = await presence.currentCheckin(user.id);
-    if (!current) return null;
-    await db.update(C).set({ checkedOutAt: clock.now(), checkoutReason: reason }).where(eq(C.id, current.id));
+    // Same lock as song submission, so a submission can't land after its singer has left.
+    const done = await withUserLock(user.id, async (tx) => {
+      const current = await presence.currentCheckin(user.id, tx);
+      if (!current) return null;
+      await tx.update(C).set({ checkedOutAt: clock.now(), checkoutReason: reason }).where(eq(C.id, current.id));
+      const kj = await presence.activeKjSession(current.venueId, tx);
+      const dropped = kj
+        ? await tx
+            .update(schema.songRequests)
+            .set({ status: 'withdrawn', decidedAt: clock.now() })
+            .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, user.id), eq(schema.songRequests.status, 'submitted')))
+            .returning()
+        : [];
+      return { current, kj, dropped };
+    });
+    if (!done) return null;
+    const { current, kj, dropped } = done;
     realtime.presenceChanged(current.venueId);
-    const kj = await presence.activeKjSession(current.venueId);
     if (kj) {
-      const dropped = await db
-        .update(schema.songRequests)
-        .set({ status: 'withdrawn', decidedAt: clock.now() })
-        .where(and(eq(schema.songRequests.kjSessionId, kj.id), eq(schema.songRequests.singerId, user.id), eq(schema.songRequests.status, 'submitted')))
-        .returning();
       const kjUser = reason === 'auto-leave' ? await db.query.users.findFirst({ where: eq(schema.users.id, kj.kjId) }) : undefined;
       if (kjUser && (await hasPremium(kjUser))) {
         await notifications.send(kj.kjId, {

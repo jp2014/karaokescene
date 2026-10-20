@@ -6,6 +6,12 @@ import { newId } from '../../lib/ids.ts';
 const { songs: S, songListEntries: L, songbookEntries: SB } = schema;
 export type Song = typeof S.$inferSelect;
 
+/**
+ * The public catalog is whatever KJs have imported: songs in at least one songbook. A song a
+ * singer free-adds exists only on their own list until some KJ imports it too.
+ */
+const inCatalog = sql`exists (select 1 from ${SB} where ${SB.songId} = ${S.id})`;
+
 function decadeOf(year?: number) {
   return year ? `${Math.floor(year / 10) * 10}s` : 'Unknown';
 }
@@ -16,7 +22,7 @@ export const songCatalog = {
     const match = q.trim() ? or(ilike(S.title, term), ilike(S.artist, term)) : undefined;
     const base = opts.kjId
       ? db.select({ song: S }).from(S).innerJoin(SB, and(eq(SB.songId, S.id), eq(SB.kjId, opts.kjId))).where(match)
-      : db.select({ song: S }).from(S).where(match);
+      : db.select({ song: S }).from(S).where(and(inCatalog, match));
     const rows = await base.orderBy(asc(S.artist), asc(S.title)).limit(opts.limit ?? 50);
     return rows.map((r) => r.song);
   },
@@ -82,7 +88,7 @@ export const songLists = {
       if (ids.size) list = list.filter((s) => ids.has(s.id));
     }
     if (!list.length) {
-      const [any] = await db.select().from(S).orderBy(sql`random()`).limit(1);
+      const [any] = await db.select().from(S).where(inCatalog).orderBy(sql`random()`).limit(1);
       return any ?? null;
     }
     return list[Math.floor(Math.random() * list.length)];
@@ -96,7 +102,7 @@ export const songLists = {
       .select({ song: S, n: sql<number>`count(*)`.as('n') })
       .from(L)
       .innerJoin(S, eq(S.id, L.songId))
-      .where(mineIds.length ? sql`${L.songId} not in ${mineIds}` : undefined)
+      .where(and(inCatalog, mineIds.length ? sql`${L.songId} not in ${mineIds}` : undefined))
       .groupBy(S.id)
       .orderBy(desc(sql`n`))
       .limit(limit);

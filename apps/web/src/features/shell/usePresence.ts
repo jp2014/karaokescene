@@ -21,7 +21,10 @@ export function usePresenceHeartbeat(me: Me | undefined) {
     if (loc.mode !== 'real' || !navigator.geolocation) return;
     const id = navigator.geolocation.watchPosition(
       (p) => locationStore.set({ real: { lat: p.coords.latitude, lng: p.coords.longitude } }),
-      () => toast.error('Location is off, so Auto Check-in and Auto Leave are paused'),
+      () => {
+        locationStore.set({ real: null });
+        toast.error('Location is off, so Auto Check-in and Auto Leave are paused');
+      },
       { enableHighAccuracy: true, maximumAge: 15_000 },
     );
     return () => navigator.geolocation.clearWatch(id);

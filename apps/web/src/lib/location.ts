@@ -13,6 +13,9 @@ export const locationStore = createStore<{ mode: 'sim' | 'real'; sim: LatLng; re
   real: null,
   label: 'Downtown Omaha',
 });
+// A GPS fix only counts for this session: never trust a position saved from an earlier visit
+// (pinning a new venue or Auto Leave would use where you were, not where you are).
+locationStore.set({ real: null });
 
 const resolve = (s: ReturnType<typeof locationStore.get>) => {
   const mode = __DEMO__ ? s.mode : 'real';

@@ -71,7 +71,7 @@ export function SongsPage() {
   const dq = useDeferredValue(q);
   const search = useQuery({ queryKey: ['song-search', dq, filterKj], queryFn: () => unwrap(api.songs.search.$get({ query: { q: dq, ...(filterKj ? { kjId: filterKj } : {}) } })), enabled: dq.length > 1 });
   const shown = (songs ?? []).filter((s) => !filterKj || s.inKjBook !== false);
-  const recs = useQuery({ queryKey: ['recs'], queryFn: () => unwrap(api.songs.recommendations.$get()) });
+  const recs = useQuery({ queryKey: ['recs'], queryFn: () => unwrap(api.songs.recommendations.$get()), enabled: !!me?.isPremium });
   const mine = new Set(songs?.map((s) => s.id));
   const inv = [qk.mySongs, ['recs']];
 
@@ -171,6 +171,14 @@ export function SongsPage() {
           <Section title="Recommended for you" icon={<Sparkles className="size-5 text-gold" />}>
             <PremiumGate feature="Smart song recommendations" blurb="Songs that fit your voice and crowd favorites near you.">
               <Card className="divide-y divide-line">
+                {/* Free plan: placeholder rows behind the lock (the API only serves recommendations on Plus). */}
+                {!me?.isPremium &&
+                  ['w-2/3', 'w-1/2', 'w-3/4'].map((w) => (
+                    <div key={w} className="space-y-1.5 px-4 py-3">
+                      <div className={`h-3 rounded bg-surface-2 ${w}`} />
+                      <div className="h-2.5 w-1/3 rounded bg-surface-2" />
+                    </div>
+                  ))}
                 {recs.data?.map((s) => (
                   <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
                     <div className="min-w-0 flex-1">

@@ -18,3 +18,11 @@ export let db: DB = new Proxy({} as DB, {
 export function setDb(next: DB) {
   db = next;
 }
+
+/** Postgres unique_violation (23505), from postgres.js or PGlite, possibly wrapped by Drizzle. */
+export function isUniqueViolation(err: unknown): boolean {
+  for (let e = err as { code?: unknown; cause?: unknown } | undefined, i = 0; e && i < 3; e = e.cause as typeof e, i++) {
+    if (e.code === '23505') return true;
+  }
+  return false;
+}

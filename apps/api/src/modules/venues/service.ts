@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
-import { db, schema } from '../../db/client.ts';
+import { db, isUniqueViolation, schema } from '../../db/client.ts';
 import { cardsById } from '../../lib/cards.ts';
 import { addDays, clock, localParts } from '../../lib/clock.ts';
 import type { VenueType } from '../../db/schema.ts';
@@ -87,23 +87,34 @@ export const venues = {
    * account (unclaimed) that the owner can claim later; the KJ's nights go live right away.
    */
   async createByKj(kj: User, input: { name: string; address: string; neighborhood: string; city: string; lat: number; lng: number; venueTypes: VenueType[]; nights: NightInput[] }) {
-    let slug = slugify(input.name);
-    if (await venues.bySlug(slug)) slug = `${slug}-${Math.floor(Math.random() * 900 + 100)}`;
+    const base = slugify(input.name) || 'venue';
     const hue = Math.floor(Math.random() * 360);
-    const ownerId = `usr_${slug}`;
     const now = clock.now();
-    await db.insert(schema.users).values({
-      id: ownerId, role: 'venue', handle: slug, displayName: input.name, avatarEmoji: '🍸', avatarHue: hue, bio: '', privacy: DEFAULT_PRIVACY, lat: input.lat, lng: input.lng, createdAt: now,
-    });
-    const venue = {
-      id: `ven_${slug}`, ownerId, claimed: false, createdById: kj.id, slug, name: input.name, tagline: `Karaoke with ${kj.displayName}`,
-      description: `${input.name} was added to Karaoke Scene by ${kj.displayName}, who hosts karaoke here.`, address: input.address, neighborhood: input.neighborhood || input.city,
-      city: input.city, lat: input.lat, lng: input.lng, hue, isPremiere: false, capacity: 80, vibes: [], venueTypes: input.venueTypes,
-    };
-    await db.insert(V).values(venue);
-    await db.insert(L).values({ kjId: kj.id, venueId: venue.id });
-    if (input.nights.length) await db.insert(N).values(input.nights.map((n) => ({ id: newId('nit'), venueId: venue.id, kjId: kj.id, ...n })));
-    return venue;
+    // The slug doubles as the placeholder account's handle, so it must be free in both tables.
+    // A parallel request can still take it between the check and the insert: retry on conflict.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const slug = attempt === 0 ? base : `${base}-${Math.floor(Math.random() * 9000 + 1000)}`;
+      const taken = (await venues.bySlug(slug)) || (await db.query.users.findFirst({ where: eq(schema.users.handle, slug) }));
+      if (taken) continue;
+      const venue = {
+        id: newId('ven'), ownerId: newId('usr'), claimed: false, createdById: kj.id, slug, name: input.name, tagline: `Karaoke with ${kj.displayName}`,
+        description: `${input.name} was added to Karaoke Scene by ${kj.displayName}, who hosts karaoke here.`, address: input.address, neighborhood: input.neighborhood || input.city,
+        city: input.city, lat: input.lat, lng: input.lng, hue, isPremiere: false, capacity: 80, vibes: [], venueTypes: input.venueTypes,
+      };
+      const created = await db
+        .transaction(async (tx) => {
+          await tx.insert(schema.users).values({
+            id: venue.ownerId, role: 'venue', handle: slug, displayName: input.name, avatarEmoji: '🍸', avatarHue: hue, bio: '', privacy: DEFAULT_PRIVACY, lat: input.lat, lng: input.lng, createdAt: now,
+          });
+          await tx.insert(V).values(venue);
+          await tx.insert(L).values({ kjId: kj.id, venueId: venue.id });
+          if (input.nights.length) await tx.insert(N).values(input.nights.map((n) => ({ id: newId('nit'), venueId: venue.id, kjId: kj.id, ...n })));
+          return true;
+        })
+        .catch((err) => (isUniqueViolation(err) ? false : Promise.reject(err)));
+      if (created) return venue;
+    }
+    return fail(409, 'Could not create that venue, please try again');
   },
 
   /** Owner claims a KJ-listed venue. (The real app verifies the owner first; see the claim sheet.) */
