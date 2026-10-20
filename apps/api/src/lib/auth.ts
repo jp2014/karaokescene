@@ -16,7 +16,8 @@ function identityFrom(sub: string, email: unknown, meta: Record<string, unknown>
 async function verifyWithJwks(cfg: SupabaseConfig, token: string) {
   if (jwks?.url !== cfg.url) jwks = { url: cfg.url, set: createRemoteJWKSet(new URL(`${cfg.url}/auth/v1/.well-known/jwks.json`)) };
   const { payload } = await jwtVerify<JWTPayload & { email?: string; user_metadata?: Record<string, unknown> }>(token, jwks.set, {
-    issuer: `${cfg.url}/auth/v1`,
+    // Local Edge workers reach Auth through Kong, but tokens use the public localhost issuer.
+    issuer: process.env.AUTH_JWT_ISSUER ?? `${cfg.url}/auth/v1`,
     audience: 'authenticated',
   });
   return payload.sub ? identityFrom(payload.sub, payload.email, payload.user_metadata) : null;

@@ -88,7 +88,7 @@
       const ROUNDS = [
         {
           id: 'go-real', title: 'Real accounts and a real backend', date: 'Oct 20, 2026',
-          questions: [['Production setup', 'Supabase backend + free static web hosting. Production starts empty. Create the hosted project and configure email delivery before launch.']],
+          questions: [['Production setup', 'Supabase backend + Cloudflare Pages. Production starts empty. Create the hosted project and configure email delivery before launch.']],
           sections: [
             { name: 'Accounts and venues', changes: [
               { id: 'real-auth', title: 'Real email codes and Google sign-in', did: 'Supabase sends and verifies the code. First-time users choose a role; returning users keep their account. The local demo remains available for development.', shots: [['before','welcome-verify'],['after','welcome-verify'],['after','welcome-roles']], try: '/welcome' },

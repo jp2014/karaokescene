@@ -66,23 +66,50 @@ mock checkout) only exists locally:
 | Media | `apps/api/data/media` | Supabase Storage (`media` bucket) |
 | Scheduled jobs | 60s timer | pg_cron (every 5 min) |
 | Push | off | Dormant; use in-app notifications + Realtime |
-| Web | Vite dev server | Static host (Cloudflare Pages planned) |
+| Web | Vite dev server | Cloudflare Pages (static) |
 
 To try real Supabase locally, see `apps/api/.env.example`.
 
 ## Production setup
 
 Production is not deployed yet. Hosting direction: a free static web host with Supabase for the backend.
-The old `pnpm release` script still targets Netlify and will be replaced in Phase 3. Do not use it yet.
+`pnpm release` builds both artifacts first, then deploys the backend and web app. The local Netlify configuration has been removed; any old Netlify site must be disabled in that account.
 
-Create a production Supabase project in US East, then configure:
+Create a production Supabase project in US East and a Cloudflare account. Log in once:
+
+```bash
+npx supabase@2 login
+npx wrangler@4 login
+npx wrangler@4 pages project create karaokescene --production-branch main
+```
+
+Use an available Pages project name and its actual production URL. Copy `.env.deploy.example` to
+`.env.deploy`, fill in the project reference, database password, public Supabase key, Pages project and site URL.
+Then configure:
 
 1. Auth: email codes using `supabase/templates/email-code.html`, Google OAuth, and the final site's URL/redirect URLs.
 2. Custom SMTP for real users. Supabase's built-in sender only delivers to project team addresses
    ([SMTP documentation](https://supabase.com/docs/guides/auth/auth-smtp)).
-3. Database migrations, the `api` Edge Function, and Storage via the release workflow.
+3. Database migrations, the `api` Edge Function, and Storage via the release workflow. The Edge Function receives Supabase’s built-in service credentials; do not expose them to the client.
 4. The static web build with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public key), and
    `VITE_API_URL=https://<ref>.supabase.co/functions/v1/api`. Service keys never go into web settings.
+
+Do not run `supabase config push` with the local Auth configuration: it contains localhost URLs.
+Email templates in the dashboard must use `{{ .Token }}` (the supplied HTML does), not a magic link.
+Set the production Site URL to the Pages origin and allow `<site-url>/welcome` for Google returns.
+Google’s OAuth app must allow `https://<ref>.supabase.co/auth/v1/callback`.
+Keep `app` out of the Supabase Data API’s exposed schemas.
+
+```bash
+pnpm release --check   # Validate settings + typecheck/build; no remote writes
+pnpm release           # Migrations, API secrets/function, then Pages upload
+node --test scripts/release.test.mjs
+```
+
+`--check` validates local artifacts; it does not verify login, SMTP, Google credentials, or remote account access.
+Cloudflare serves client routes through its SPA fallback (no top-level `404.html` is shipped).
+[Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/) documents this deployment model;
+Git-based deployment would require a separate Pages project.
 
 Leave Firebase settings unset for launch. Push remains dormant; in-app notifications and Realtime work independently.
 Payments show “coming soon”; local demo plan toggles never ship in the real build.
@@ -104,6 +131,18 @@ Existing browser checks (Chrome required; default web port 5174):
 node scripts/e2e/real-auth.mjs
 node scripts/e2e/real-venues.mjs
 ```
+
+Verify the actual Edge Runtime too (it uses Kong internally, so the local public JWT issuer is explicit):
+
+```bash
+# Create a local ignored env file containing AUTH_JWT_ISSUER=http://127.0.0.1:55421/auth/v1
+npx supabase functions serve api --no-verify-jwt --env-file /path/to/local-edge.env
+# In another terminal:
+node scripts/e2e/edge-smoke.mjs
+```
+
+Keep `AUTH_JWT_ISSUER` unset in hosted production; there the default Supabase URL matches the token issuer.
+The smoke check validates real OTP, onboarding, and absence of demo endpoints through the Edge URL.
 
 Focused persistence regressions (fresh in-memory database, no Docker required):
 
