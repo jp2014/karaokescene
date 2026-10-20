@@ -1,17 +1,23 @@
 // Before/after screenshots for the dev-only /changes/ page (apps/web/changes, served by `pnpm dev`).
 //
-// Usage: node scripts/changes/capture.mjs <before|after> <outDir> [only,names]
+// Usage: node scripts/changes/capture.mjs <round> <before|after> <outDir> [only,names]
 //   before: the previous version, e.g. `git worktree add /tmp/ks-old <commit>`, then run its API
 //           with PORT=8788 and its web app with `API_URL=http://localhost:8788 vite --port 5174`
-//   after:  this checkout's `pnpm dev` on :5173
-// Each spec crops to the element that changed and draws a red box around it. For a new
-// feedback round, replace the BEFORE/AFTER specs and write to changes/<round>/{before,after}.
+//   after:  this checkout's `pnpm dev` on :5173 (BASE_URL=http://localhost:5173 also captures "before"
+//           from the current checkout, if you capture it before changing anything)
+// Each spec crops to the element that changed and draws a red box around it. For a new round,
+// add its specs to ROUNDS and write to apps/web/changes/<round>/{before,after}.
 // Needs Google Chrome installed (playwright-core drives it).
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
-const [version, out, onlyArg] = process.argv.slice(2);
-const base = version === 'before' ? 'http://localhost:5174' : 'http://localhost:5173';
+const [round, version, out, onlyArg] = process.argv.slice(2);
+if (!['before', 'after'].includes(version) || !out) {
+  console.error('Usage: node scripts/changes/capture.mjs <round> <before|after> <outDir> [only,names]');
+  process.exit(1);
+}
+// BASE_URL overrides, e.g. when "before" is simply the current checkout, captured before editing.
+const base = process.env.BASE_URL ?? (version === 'before' ? 'http://localhost:5174' : 'http://localhost:5173');
 const only = onlyArg?.split(',');
 mkdirSync(out, { recursive: true });
 
@@ -34,7 +40,7 @@ const signIn = async (userId) => (await demoApi('/demo/sign-in', '/auth/demo-sig
 await demoApi('/demo/reset', '/debug/reset', { method: 'POST' });
 const tokens = { singer: await signIn('usr_jess'), kj: await signIn('usr_velvetvox'), venue: await signIn('usr_neon-mic') };
 await api('/presence/check-in', { token: tokens.singer, method: 'POST', body: { venueId: 'ven_neon-mic', method: 'manual' } });
-if (version === 'after') {
+if (round === 'v2' && version === 'after') {
   const songs = await api('/songs/mine?kjId=usr_velvetvox', { token: tokens.singer });
   const inBook = songs.filter((s) => s.inKjBook);
   const a = await api('/live/submissions', { token: tokens.singer, method: 'POST', body: { songId: inBook[0].id, source: 'list' } });
@@ -105,7 +111,7 @@ async function shot({ name, path, as, wide, prep, targets, context, pad = 14, ma
   console.log('✓', name);
 }
 
-const BEFORE = [
+const V2_BEFORE = [
   { name: 'welcome-roles', path: '/welcome', targets: [section('Pick a demo persona')] },
   { name: 'welcome-kj', path: '/welcome', targets: [(p) => p.locator('button', { hasText: 'Karaoke DJ' }).locator('p')], context: (p) => p.locator('button', { hasText: 'Karaoke DJ' }) },
   { name: 'menu-singer', path: '/feed', as: 'singer', wide: true, noBox: true, targets: [(p) => p.locator('aside nav')] },
@@ -122,7 +128,7 @@ const BEFORE = [
   { name: 'songs-recs', path: '/songs', as: 'singer', targets: [section('Recommended for you')] },
 ];
 
-const AFTER = [
+const V2_AFTER = [
   { name: 'welcome-roles', path: '/welcome', targets: [section('I am a')] },
   { name: 'welcome-kj', path: '/welcome', targets: [(p) => p.locator('button', { hasText: 'Upload your song book' }).locator('p')], context: (p) => p.locator('button', { hasText: 'Upload your song book' }) },
   {
@@ -180,7 +186,27 @@ const AFTER = [
   { name: 'hq-locked', path: '/hq', as: 'venue', prep: async (p) => { await setPlan('venue', false); await p.reload({ waitUntil: 'networkidle' }); await p.waitForTimeout(1200); }, targets: [section('Peak hours')] },
 ];
 
-for (const s of version === 'before' ? BEFORE : AFTER) {
+// Going real (Phase 2): screens that change when the demo's stand-ins become the real thing.
+const GO_REAL_BEFORE = [
+  { name: 'welcome-roles', path: '/welcome', targets: [section('I am a')] },
+  {
+    name: 'welcome-verify', path: '/welcome',
+    prep: async (p) => { await click('Continue as a singer')(p); await p.fill('input[type=email]', 'jess@example.com'); await click('Email me a code')(p); await p.fill('input[inputmode=numeric]', '123456'); },
+    targets: [card('Check your email')],
+  },
+  { name: 'kj-autopost', path: '/kj', as: 'kj', targets: [card('Auto-Posting')] },
+  { name: 'hq-specials-autopost', path: '/hq', as: 'venue', targets: [(p) => p.locator('div.rounded-2xl', { hasText: 'Auto-post on each of its days' }).first()], context: section('Drink specials') },
+  { name: 'myvenues-autopromote', path: '/my-venues', as: 'kj', targets: [(p) => p.locator('div.rounded-2xl', { hasText: 'Auto Promote' }).first()], context: (p) => p.locator('div.rounded-3xl', { hasText: 'The Neon Mic' }).last() },
+  { name: 'myvenues-add', path: '/my-venues', as: 'kj', prep: click('Add a venue'), targets: [dialog], pad: 0, noBox: true },
+  { name: 'venue-claim', path: '/venues/leavenworth-lounge', as: 'singer', prep: click('Claim this venue'), targets: [dialog], pad: 0, noBox: true },
+  { name: 'upgrade-sheet', path: '/songs', as: 'singer', prep: async (p) => { await setPlan('singer', false); await p.reload({ waitUntil: 'networkidle' }); await p.waitForTimeout(1000); await click('Unlock with')(p); }, targets: [dialog], pad: 0, noBox: true },
+];
+const GO_REAL_AFTER = [];
+
+const ROUNDS = { v2: { before: V2_BEFORE, after: V2_AFTER }, 'go-real': { before: GO_REAL_BEFORE, after: GO_REAL_AFTER } };
+const specs = ROUNDS[round]?.[version] ?? (console.error(`Unknown round ${round}. Rounds: ${Object.keys(ROUNDS).join(', ')}`), process.exit(1));
+
+for (const s of specs) {
   if (only && !only.includes(s.name)) continue;
   try {
     await shot(s);
@@ -188,5 +214,6 @@ for (const s of version === 'before' ? BEFORE : AFTER) {
     console.log('✗', s.name, e.message.split('\n')[0]);
   }
 }
-if (version === 'after') for (const who of ['singer', 'kj', 'venue']) await setPlan(who, true);
+// Leave every persona on its paid plan, as the seed does.
+for (const who of ['singer', 'kj', 'venue']) await setPlan(who, true);
 await browser.close();
