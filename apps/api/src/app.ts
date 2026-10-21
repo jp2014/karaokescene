@@ -49,7 +49,9 @@ const allowedOrigin = (origin: string) => {
 
 export const app = new Hono()
   .use(logger())
-  .use('/api/*', cors({ origin: allowedOrigin }))
+  // Signed-in calls carry an Authorization header, so browsers preflight them; let them cache it
+  // (Chromium caps this at 2 hours) instead of paying an extra round trip on every request.
+  .use('/api/*', cors({ origin: allowedOrigin, maxAge: 7200 }))
   .route('/api', api);
 
 app.onError((err, c) => {

@@ -180,9 +180,7 @@ export const social = {
     const me = (await cardsById([viewerId])).get(viewerId)!;
     const today = new Date(clock.now()).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
     const when = input.date === today ? 'tonight' : new Date(`${input.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
-    for (const id of to) {
-      await notifications.send(id, { kind: 'invite', title: `🎉 ${me.displayName} invited you out ${when}`, body: `Karaoke at ${venue!.name}. Tap "Going?" to join.`, link: `/venues/${venue!.slug}` });
-    }
+    await notifications.sendMany(to.map((userId) => ({ userId, kind: 'invite', title: `🎉 ${me.displayName} invited you out ${when}`, body: `Karaoke at ${venue!.name}. Tap "Going?" to join.`, link: `/venues/${venue!.slug}` })));
     return { sent: to.length };
   },
 

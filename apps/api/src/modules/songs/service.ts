@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, schema } from '../../db/client.ts';
+import { db, rowsOf, schema } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
 import { newId } from '../../lib/ids.ts';
 import { parseSongbook } from './import.ts';
@@ -12,6 +12,11 @@ export type Song = typeof S.$inferSelect;
  * singer free-adds exists only on their own list until some KJ imports it too.
  */
 const inCatalog = sql`exists (select 1 from ${SB} where ${SB.songId} = ${S.id})`;
+
+/** Serializes creating catalog songs, so concurrent adds and imports can't duplicate one. */
+const catalogLock = sql`select pg_advisory_xact_lock(hashtext('songs:catalog'))`;
+/** Songs matched and inserted per statement during a songbook import. */
+const IMPORT_BATCH = 500;
 
 function decadeOf(year?: number) {
   return year ? `${Math.floor(year / 10) * 10}s` : 'Unknown';
@@ -30,13 +35,23 @@ export const songCatalog = {
 
   /** Find a song by title+artist, creating it in the shared catalog if needed. */
   async upsert(title: string, artist: string, genre = 'Other', year?: number): Promise<Song> {
-    const existing = await db.query.songs.findFirst({
-      where: and(sql`lower(${S.title}) = lower(${title})`, sql`lower(${S.artist}) = lower(${artist})`),
-    });
+    // The md5 terms let Postgres use songs_title_artist_md5_idx; the lower() terms decide.
+    const match = and(
+      sql`md5(lower(${S.title})) = md5(lower(${title}))`,
+      sql`md5(lower(${S.artist})) = md5(lower(${artist}))`,
+      sql`lower(${S.title}) = lower(${title})`,
+      sql`lower(${S.artist}) = lower(${artist})`,
+    );
+    const existing = await db.query.songs.findFirst({ where: match });
     if (existing) return existing;
-    const song = { id: newId('sng'), title, artist, genre, decade: decadeOf(year) };
-    await db.insert(S).values(song);
-    return song;
+    return db.transaction(async (tx) => {
+      await tx.execute(catalogLock);
+      const raced = await tx.query.songs.findFirst({ where: match });
+      if (raced) return raced;
+      const song = { id: newId('sng'), title, artist, genre, decade: decadeOf(year) };
+      await tx.insert(S).values(song);
+      return song;
+    });
   },
 };
 
@@ -53,6 +68,22 @@ export const songLists = {
       ? new Set((await db.select({ id: SB.songId }).from(SB).where(and(eq(SB.kjId, kjId), inArray(SB.songId, rows.map((r) => r.song.id))))).map((r) => r.id))
       : null;
     return rows.map((r) => ({ ...r.song, isGoTo: r.isGoTo, addedAt: r.addedAt, inKjBook: inBook ? inBook.has(r.song.id) : null }));
+  },
+
+  /** For lists of singers (the KJ booth): each one's list size and first few go-to songs. */
+  async goToSummaries(userIds: string[], perUser = 3) {
+    const ids = [...new Set(userIds)];
+    if (!ids.length) return new Map<string, { listSize: number; goTo: Song[] }>();
+    const [sizes, goTos] = await Promise.all([
+      db.select({ userId: L.userId, n: sql<number>`count(*)` }).from(L).where(inArray(L.userId, ids)).groupBy(L.userId),
+      db.select({ userId: L.userId, song: S }).from(L).innerJoin(S, eq(S.id, L.songId)).where(and(inArray(L.userId, ids), eq(L.isGoTo, true))).orderBy(asc(S.artist)),
+    ]);
+    return new Map(
+      ids.map((id) => [
+        id,
+        { listSize: Number(sizes.find((r) => r.userId === id)?.n ?? 0), goTo: goTos.filter((r) => r.userId === id).slice(0, perUser).map((r) => r.song) },
+      ]),
+    );
   },
 
   async add(userId: string, songId: string) {
@@ -143,11 +174,52 @@ export const songbooks = {
    */
   async importText(kjId: string, text: string) {
     const { songs, skipped, lines } = parseSongbook(text);
-    const before = (await songbooks.stats(kjId)).total;
-    for (const input of songs) {
-      const song = await songCatalog.upsert(input.title, input.artist, input.genre, input.year);
-      await songbooks.add(kjId, song.id);
-    }
-    return { added: (await songbooks.stats(kjId)).total - before, skipped, lines };
+    // Songbooks run to tens of thousands of songs: match and insert in batches rather than one
+    // round trip per song. The catalog lock keeps concurrent imports from duplicating a new song.
+    const added = await db.transaction(async (tx) => {
+      await tx.execute(catalogLock);
+      /** Postgres-normalized title + artist → the catalog song used for it in this import. */
+      const chosen = new Map<string, string>();
+      let added = 0;
+      for (let i = 0; i < songs.length; i += IMPORT_BATCH) {
+        const batch = songs.slice(i, i + IMPORT_BATCH);
+        // Postgres lower(), not JavaScript's, decides what "the same song" is (they differ for some
+        // Unicode). With case-variant duplicates in the catalog, prefer one already in this KJ's
+        // book, then the oldest id, so re-imports are stable.
+        const input = sql.join(batch.map((b, j) => sql`(${j}::int, ${b.title}::text, ${b.artist}::text)`), sql`, `);
+        const rows = rowsOf<{ i: number; title: string; artist: string; id: string | null }>(
+          await tx.execute(sql`
+            with input(i, title, artist) as (values ${input})
+            select input.i, lower(input.title) as title, lower(input.artist) as artist, s.id,
+              -- A per-row primary-key probe: as a join, stale stats mid-import made the planner
+              -- compare every row against the KJ's whole book.
+              exists (select 1 from ${SB} mine where mine.kj_id = ${kjId} and mine.song_id = s.id) as mine
+            from input
+            left join ${S} s on md5(lower(s.title)) = md5(lower(input.title)) and md5(lower(s.artist)) = md5(lower(input.artist))
+              and lower(s.title) = lower(input.title) and lower(s.artist) = lower(input.artist)
+            order by input.i, mine desc, s.id`),
+        );
+        const matches = rows.map((r) => ({ i: Number(r.i), key: JSON.stringify([r.title, r.artist]), id: r.id }));
+        const fresh: Song[] = [];
+        const seen = new Set<number>();
+        for (const m of matches) {
+          if (seen.has(m.i)) continue; // first (preferred) candidate only
+          seen.add(m.i);
+          if (chosen.has(m.key)) continue;
+          if (m.id) chosen.set(m.key, m.id);
+          else {
+            // First spelling in the file wins for a song new to the catalog.
+            const b = batch[m.i];
+            fresh.push({ id: newId('sng'), title: b.title, artist: b.artist, genre: b.genre, decade: decadeOf(b.year) });
+            chosen.set(m.key, fresh.at(-1)!.id);
+          }
+        }
+        if (fresh.length) await tx.insert(S).values(fresh);
+        const entries = [...new Set(matches.map((m) => chosen.get(m.key)!))].map((songId) => ({ kjId, songId }));
+        added += (await tx.insert(SB).values(entries).onConflictDoNothing().returning({ songId: SB.songId })).length;
+      }
+      return added;
+    });
+    return { added, skipped, lines };
   },
 };

@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Camera, Clock, Disc3, Eye, FileText, Link2, Martini, Plus, Save, Store, Trash2, UtensilsCrossed, X } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
+import { useDebounced } from '~/lib/debounce';
 import { Avatar, UserRow } from '~/components/Avatar';
 import { FilePicker } from '~/components/FilePicker';
 import { QrCard } from '~/components/QrCard';
@@ -241,7 +242,7 @@ function MenuEditor({ v, onSave }: { v: Venue; onSave: (url: string | null) => v
 /** The KJs who host at this venue. Venues can add or remove them. */
 function AssociatedKjs({ v, kjs }: { v: Venue; kjs: Me['venueKjs'] }) {
   const [q, setQ] = useState('');
-  const dq = useDeferredValue(q);
+  const dq = useDebounced(q);
   const search = useQuery({ queryKey: ['people', dq], queryFn: () => unwrap(api.profiles.search.$get({ query: { q: dq } })), enabled: dq.length > 1 });
   const set = useAction((x: { kjId: string; on: boolean }) => unwrap(api.venues[':venueId'].kjs[':kjId'].$put({ param: { venueId: v.id, kjId: x.kjId }, json: { on: x.on } })), {
     invalidate: [qk.me, ['venue']],

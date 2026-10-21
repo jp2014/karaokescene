@@ -44,6 +44,6 @@ export const songRoutes = new Hono<AppEnv>()
     await songbooks.remove(requireViewer(c, 'kj').id, c.req.param('songId'));
     return c.json({ ok: true });
   })
-  .post('/songbook/import', zValidator('json', z.object({ text: z.string().max(500_000) })), async (c) =>
+  .post('/songbook/import', zValidator('json', z.object({ text: z.string().max(2_000_000) })), async (c) =>
     c.json(await songbooks.importText(requireViewer(c, 'kj').id, c.req.valid('json').text)),
   );

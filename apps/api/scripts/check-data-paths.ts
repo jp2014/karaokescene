@@ -11,6 +11,9 @@ import { localTimeToMs, SCENE_TZ } from '../src/lib/clock.ts';
 import { parseSongbook } from '../src/modules/songs/import.ts';
 import { songbooks, songCatalog, songLists } from '../src/modules/songs/service.ts';
 import { venues } from '../src/modules/venues/service.ts';
+import { notifications } from '../src/modules/notifications/service.ts';
+import { BADGES } from '../src/modules/reputation/badges.ts';
+import { reputation } from '../src/modules/reputation/service.ts';
 import { DEFAULT_PRIVACY } from '../src/modules/profiles/privacy.ts';
 
 assert.equal(SCENE_TZ, 'America/Chicago', 'These DST fixtures use the default scene timezone');
@@ -46,6 +49,53 @@ try {
   assert.equal((await songbooks.stats(kj.id)).total, 1);
   assert.equal((await db.select().from(schema.songs)).length, 1, 'Malformed files must not partly import');
   console.log('✓ CSV/TSV quotes, commas, newlines and malformed-file rejection preserve song data');
+
+  // Real songbooks are tens of thousands of lines: imported in batches, matched case-insensitively.
+  const big = Array.from({ length: 2400 }, (_, i) => `Song ${i},Artist ${i % 300}`);
+  const bigText = ['"HELLO, GOODBYE","the beatles"', ...big, 'song 7,ARTIST 7', 'Song 8,Artist 8'].join('\n');
+  const imported = await songbooks.importText('other-kj', bigText);
+  assert.equal(imported.added, 2401, 'Duplicate lines and case variants are one song each');
+  assert.equal((await db.select().from(schema.songs)).length, 2401, 'Existing catalog songs are reused, not duplicated');
+  assert.equal((await songbooks.importText('other-kj', bigText)).added, 0, 'Re-importing adds nothing');
+  assert.deepEqual((await db.select().from(schema.songs).where(eq(schema.songs.title, 'Song 7'))).map((s) => s.artist), ['Artist 7'], 'First spelling wins');
+  const [a, b] = await Promise.all([songCatalog.upsert('Race Song', 'Racer'), songCatalog.upsert('race song', 'RACER')]);
+  assert.equal(a.id, b.id, 'Concurrent adds of a new song share one catalog row');
+  assert.equal((await songbooks.importText('other-kj', `${'x'.repeat(201)},Artist`)).skipped, 1, 'Oversized fields are skipped, not stored');
+  // Legacy oversized rows must not break the songs index or later lookups.
+  await db.insert(schema.songs).values({ id: 'sng_huge', title: Array.from({ length: 6000 }, (_, i) => String.fromCharCode(33 + ((i * 7919) % 90))).join(''), artist: 'Legacy', genre: 'Other', decade: 'Unknown' });
+  assert.equal((await songCatalog.upsert('Legacy song', 'Legacy')).title, 'Legacy song');
+  // Postgres decides sameness: JavaScript lowercases some Unicode differently (İ).
+  assert.equal((await songbooks.importText('other-kj', 'İstanbul,Artist')).added, 1);
+  assert.equal((await songbooks.importText('other-kj', 'İstanbul,Artist')).added, 0, 'Unicode titles re-import without duplicates');
+  assert.equal((await db.select().from(schema.songs).where(eq(schema.songs.artist, 'Artist'))).length, 1);
+  // Case-variant duplicates already in the catalog: a re-import keeps the KJ's existing song.
+  await db.insert(schema.songs).values([{ id: 'sng_hello_a', title: 'Hello', artist: 'Adele', genre: 'Pop', decade: '2010s' }, { id: 'sng_hello_b', title: 'HELLO', artist: 'ADELE', genre: 'Pop', decade: '2010s' }]);
+  await songbooks.add('other-kj', 'sng_hello_b');
+  assert.equal((await songbooks.importText('other-kj', 'Hello,Adele\nhello,adele')).added, 0, 'An equivalent song already in the book counts');
+  assert.deepEqual((await db.select().from(schema.songbookEntries).where(eq(schema.songbookEntries.songId, 'sng_hello_a'))).length, 0);
+  console.log('✓ large songbook imports batch, dedupe like Postgres does and stay idempotent');
+
+  await db.insert(schema.badgeAwards).values([
+    { id: 'b1', badgeKey: BADGES[0].key, recipientId: 'kj', giverId: 'singer', createdAt: 1 },
+    { id: 'b2', badgeKey: BADGES[0].key, recipientId: 'kj', giverId: 'other-kj', createdAt: 2 },
+    { id: 'b3', badgeKey: 'retired-badge', recipientId: 'kj', giverId: 'singer', createdAt: 3 },
+  ]);
+  const sums = await reputation.summaries(['kj', 'singer', 'kj']);
+  assert.deepEqual(sums.get('kj')!.map((x) => [x.key, x.count]), [[BADGES[0].key, 2]]);
+  assert.deepEqual(sums.get('singer'), []);
+  assert.deepEqual(await reputation.summary('kj'), sums.get('kj'));
+  await songLists.add('singer', a.id);
+  await songLists.setGoTo('singer', a.id, true);
+  const lists = await songLists.goToSummaries(['singer', 'empty-kj']);
+  assert.deepEqual([lists.get('singer')!.listSize, lists.get('singer')!.goTo.map((x) => x.id), lists.get('empty-kj')!.listSize], [1, [a.id], 0]);
+  await songLists.remove('singer', a.id);
+  const fanout = [{ userId: 'singer', kind: 'promo' as const, title: 'x', dedupeId: 'ntf_dedupe' }, { userId: 'kj', kind: 'promo' as const, title: 'y' }];
+  assert.equal(await notifications.sendMany(fanout), 2);
+  assert.equal(await notifications.sendMany(fanout), 1, 'A repeated dedupe id is not delivered twice');
+  assert.equal(await notifications.send('singer', { kind: 'promo', title: 'x' }, 'ntf_dedupe'), false);
+  assert.equal(await notifications.sendMany([{ userId: 'kj', kind: 'promo', title: 'first', dedupeId: 'ntf_twice' }, { userId: 'kj', kind: 'promo', title: 'second', dedupeId: 'ntf_twice' }]), 1, 'A dedupe id repeated in one call is one delivery');
+  assert.equal((await db.select().from(schema.notifications).where(eq(schema.notifications.id, 'ntf_twice')))[0].title, 'first');
+  console.log('✓ batched badge, song list and notification fan-out match the single-user paths');
 
   const privateSong = await songLists.addCustom('singer', 'Private song', 'Private artist');
   const available = (await songCatalog.search('', { kjId: kj.id }))[0];

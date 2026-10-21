@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { release, releaseConfig, transactionPoolerUrl } from './release.mjs';
+import { databaseRegion, release, releaseConfig, transactionPoolerUrl } from './release.mjs';
 
 const env = {
   CLOUDFLARE_ACCOUNT_ID: 'b'.repeat(32), GITHUB_SHA: 'a'.repeat(40), SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst', SUPABASE_DB_PASSWORD: 'test-only',
@@ -76,4 +76,17 @@ test('a missing pooler URL stops the release before migrations', () => {
   assert.throws(() => release({ env, readPoolerUrl: () => { throw new Error('ENOENT'); }, writeAsset: () => {}, run: (cmd, args) => calls.push(args.join(' ')) }), /did not record the database pooler URL/);
   assert.ok(calls.some((c) => c.includes('supabase link')));
   assert.ok(!calls.some((c) => c.includes('db push') || c.includes('secrets') || c.includes('functions deploy')));
+});
+
+test('the frontend pins the API to the database region, learned before any remote change', () => {
+  const calls = [];
+  let release_json = '';
+  release({ env, readPoolerUrl, writeAsset: (_path, body) => { release_json = body; }, run: (cmd, args, opts) => calls.push({ call: [cmd, ...args].join(' '), env: opts?.env }) });
+  const at = (part) => calls.findIndex((c) => c.call.includes(part));
+  assert.ok(at('supabase link') < at('@ks/web build') && at('@ks/web build') < at('supabase db push'));
+  assert.equal(calls[at('@ks/web build')].env.VITE_API_REGION, 'us-west-2');
+  assert.equal(JSON.parse(release_json).apiRegion, 'us-west-2');
+  assert.equal(calls[at('verify-release.mjs api')].env.API_REGION, 'us-west-2');
+  assert.equal(databaseRegion('postgresql://postgres.x@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres'), 'ap-southeast-1');
+  assert.throws(() => databaseRegion('postgresql://postgres.x@pooler.example.com:6543/postgres'), /database region/);
 });

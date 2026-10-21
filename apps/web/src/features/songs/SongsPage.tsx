@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { BookOpen, PenLine, Plus, Search, Sparkles, Star, Trash2 } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
+import { useDebounced } from '~/lib/debounce';
 import { Avatar } from '~/components/Avatar';
 import { PremiumGate } from '~/components/Premium';
 import { Button, Card, cx, EmptyState, Pill, Section, Spinner, Toggle } from '~/components/ui';
@@ -68,7 +69,7 @@ export function SongsPage() {
   const filterKj = kj && kjOnly ? kj.id : undefined;
   const { data: songs, isLoading } = useMySongs(kj?.id);
   const [q, setQ] = useState('');
-  const dq = useDeferredValue(q);
+  const dq = useDebounced(q);
   const search = useQuery({ queryKey: ['song-search', dq, filterKj], queryFn: () => unwrap(api.songs.search.$get({ query: { q: dq, ...(filterKj ? { kjId: filterKj } : {}) } })), enabled: dq.length > 1 });
   const shown = (songs ?? []).filter((s) => !filterKj || s.inKjBook !== false);
   const recs = useQuery({ queryKey: ['recs'], queryFn: () => unwrap(api.songs.recommendations.$get()), enabled: !!me?.isPremium });

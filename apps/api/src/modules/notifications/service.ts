@@ -26,15 +26,39 @@ export type NotificationKind =
   | 'blast'
   | 'regular';
 
+type Message = { kind: NotificationKind; title: string; body?: string; link?: string };
+
 export const notifications = {
   /** Store it for the in-app list, nudge any open app over Realtime, and push to their devices. */
-  async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }, dedupeId?: string) {
-    const row = { id: dedupeId ?? newId('ntf'), userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: clock.now() };
-    const inserted = await db.insert(schema.notifications).values(row).onConflictDoNothing().returning({ id: schema.notifications.id });
-    if (!inserted.length) return false;
-    realtime.publish(`user:${userId}`, 'notification', { id: row.id, kind: row.kind });
-    defer('push', () => push.send(userId, row));
-    return true;
+  async send(userId: string, n: Message, dedupeId?: string) {
+    return (await notifications.sendMany([{ userId, ...n, dedupeId }])) === 1;
+  },
+
+  /**
+   * `send` to many people at once (fan-out to fans, friends, nearby singers) in a few statements.
+   * Rows whose `dedupeId` already exists are skipped. Returns how many were delivered.
+   */
+  async sendMany(items: (Message & { userId: string; dedupeId?: string })[]) {
+    const now = clock.now();
+    const rows = [];
+    const ids = new Set<string>();
+    for (const n of items) {
+      const id = n.dedupeId ?? newId('ntf');
+      if (ids.has(id)) continue; // repeated within this call: still one notification (the first)
+      ids.add(id);
+      rows.push({ id, userId: n.userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: now });
+    }
+    let delivered = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500);
+      const ids = new Set((await db.insert(schema.notifications).values(batch).onConflictDoNothing().returning({ id: schema.notifications.id })).map((r) => r.id));
+      // Signal each stored batch now: if a later batch fails, a retry skips these by dedupe id.
+      const stored = batch.filter((r) => ids.has(r.id));
+      realtime.publishMany(stored.map((r) => ({ topic: `user:${r.userId}` as const, event: 'notification' as const, payload: { id: r.id, kind: r.kind } })));
+      for (const r of stored) defer('push', () => push.send(r.userId, r));
+      delivered += stored.length;
+    }
+    return delivered;
   },
 
   async list(userId: string) {

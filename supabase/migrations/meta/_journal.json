@@ -50,6 +50,13 @@
       "when": 1792539557893,
       "tag": "20261020233917_reminder_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792581112088,
+      "tag": "20261021111152_scale_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,11 @@ export function setDb(next: DB) {
   db = next;
 }
 
+/** Rows from `db.execute`: postgres.js returns an array, node-postgres and PGlite a result with `rows`. */
+export function rowsOf<T>(result: unknown): T[] {
+  return (Array.isArray(result) ? result : (result as { rows: T[] }).rows) as T[];
+}
+
 /** Postgres unique_violation (23505), from postgres.js or PGlite, possibly wrapped by Drizzle. */
 export function isUniqueViolation(err: unknown): boolean {
   for (let e = err as { code?: unknown; cause?: unknown } | undefined, i = 0; e && i < 3; e = e.cause as typeof e, i++) {

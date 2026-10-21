@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { BadgeCheck, Plus, Search, Store } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
+import { useDebounced } from '~/lib/debounce';
 import { Button, Card, Section, Sheet } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { useVenuePlace, VenuePlaceFields } from '~/features/venue/VenuePlaceFields';
@@ -19,7 +20,7 @@ export function VenueSetup() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const dq = useDeferredValue(q.trim());
+  const dq = useDebounced(q.trim());
   const listings = useQuery({ queryKey: ['unclaimed', dq], queryFn: () => fetchUnclaimed(dq), enabled: dq.length > 1 });
   const [claiming, setClaiming] = useState<Listing | null>(null);
   const [adding, setAdding] = useState(false);

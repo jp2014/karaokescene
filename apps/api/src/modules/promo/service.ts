@@ -87,7 +87,7 @@ export const promo = {
     const hidden = await social.hiddenIds(kj.id);
     const ids = [...new Set([...fans, ...recent].map((r) => r.id))].filter((id) => !hidden.has(id));
     const singers = ids.length ? await db.select({ id: schema.users.id }).from(schema.users).where(and(inArray(schema.users.id, ids), eq(schema.users.role, 'singer'))) : [];
-    for (const s of singers) await notifications.send(s.id, { kind: 'blast', title: `📣 ${kj.displayName}`, body: message, link: `/u/${kj.handle}` });
+    await notifications.sendMany(singers.map((s) => ({ userId: s.id, kind: 'blast', title: `📣 ${kj.displayName}`, body: message, link: `/u/${kj.handle}` })));
     return { sent: singers.length };
   },
 };

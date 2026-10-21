@@ -15,6 +15,12 @@ export function usePresenceHeartbeat(me: Me | undefined) {
   const prompted = useRef<string | null>(null);
   const { lat, lng } = loc.current;
   const known = loc.known;
+  // GPS reports every small drift (often each second while moving). Read the exact position from a
+  // ref and restart the heartbeat only after a real move (~100m), so the API sees one beat per 20s.
+  const position = useRef({ lat, lng });
+  position.current = { lat, lng };
+  const area = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  const lastBeat = useRef(0);
 
   // Real GPS mode: watch the device position.
   useEffect(() => {
@@ -35,7 +41,8 @@ export function usePresenceHeartbeat(me: Me | undefined) {
     if (!me || me.role !== 'singer' || !known) return;
     let cancelled = false;
     async function beat() {
-      const res = await unwrap(api.presence.location.$post({ json: { lat, lng } })).catch(() => null);
+      lastBeat.current = Date.now();
+      const res = await unwrap(api.presence.location.$post({ json: position.current })).catch(() => null);
       if (!res || cancelled) return;
       if (res.autoLeft) {
         toast(`👋 You left ${res.autoLeft.name}`, { description: 'Auto Leave checked you out and let the KJ know.' });
@@ -60,11 +67,12 @@ export function usePresenceHeartbeat(me: Me | undefined) {
       }
       if (!res.arrivedAt && !res.checkedInAt) prompted.current = null;
     }
-    beat();
+    // Right away after a move, unless a beat just went out (GPS jitter across an area boundary).
+    if (Date.now() - lastBeat.current > 5_000) beat();
     const t = setInterval(beat, 20_000);
     return () => {
       cancelled = true;
       clearInterval(t);
     };
-  }, [me?.id, me?.role, lat, lng, known, qc]);
+  }, [me?.id, me?.role, area, known, qc]);
 }

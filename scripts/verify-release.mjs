@@ -3,18 +3,24 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export async function verifyRelease(kind, { apiUrl, siteUrl, revision, supabaseUrl, anonKey, fetchImpl = fetch }) {
+export async function verifyRelease(kind, { apiUrl, siteUrl, revision, supabaseUrl, anonKey, region, fetchImpl = fetch }) {
   const get = async (url, headers = {}) => {
     const res = await fetchImpl(url, { headers: { 'cache-control': 'no-cache', ...headers }, signal: AbortSignal.timeout(10_000) });
     assert.equal(res.status, 200, `${new URL(url).pathname} returned ${res.status}`);
     return res;
   };
-  const health = await get(`${apiUrl}/health`, { origin: siteUrl });
-  assert.equal(health.headers.get('access-control-allow-origin'), siteUrl, 'API must allow the production web origin');
-  const status = await health.json();
-  assert.equal(status.ok, true);
-  assert.equal(status.revision, revision, 'API is still serving a different release');
-  const discovery = await (await get(`${apiUrl}/discover/venues?lat=41.2565&lng=-95.9345&radiusMi=1`)).json();
+  // The frontend pins the API to the database's region (forceFunctionRegion), so that is the
+  // deployment it uses; the unpinned nearest region still serves older cached frontends.
+  const pinned = (path) => `${apiUrl}${path}${path.includes('?') ? '&' : '?'}forceFunctionRegion=${region}`;
+  for (const url of [`${apiUrl}/health`, pinned('/health')]) {
+    const health = await get(url, { origin: siteUrl });
+    assert.equal(health.headers.get('access-control-allow-origin'), siteUrl, 'API must allow the production web origin');
+    if (url !== `${apiUrl}/health`) assert.equal(health.headers.get('x-sb-edge-region'), region, `API must run in the database region (${region})`);
+    const status = await health.json();
+    assert.equal(status.ok, true);
+    assert.equal(status.revision, revision, 'API is still serving a different release');
+  }
+  const discovery = await (await get(pinned('/discover/venues?lat=41.2565&lng=-95.9345&radiusMi=1'))).json();
   assert.ok(Array.isArray(discovery.venues), 'Discovery must successfully read the database');
   const auth = await (await get(`${supabaseUrl}/auth/v1/settings`, { apikey: anonKey })).json();
   assert.equal(auth.mailer_autoconfirm, true, 'Auth: turn Confirm email OFF');
@@ -25,6 +31,7 @@ export async function verifyRelease(kind, { apiUrl, siteUrl, revision, supabaseU
     const deployed = await (await get(`${siteUrl}/release.json?revision=${revision}`)).json();
     assert.equal(deployed.revision, revision, 'Frontend is still serving a different release');
     assert.equal(deployed.apiUrl, apiUrl, 'Frontend must target this API');
+    assert.equal(deployed.apiRegion, region, 'Frontend must pin the API to the database region');
     for (const path of ['/', '/welcome']) {
       const html = await (await get(`${siteUrl}${path}`, { 'sec-fetch-mode': 'navigate' })).text();
       assert.match(html, /id="root"/, `${path} must serve the React app`);
@@ -42,10 +49,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const kind = process.argv[2];
     assert.ok(['api', 'web'].includes(kind), 'Usage: node scripts/verify-release.mjs <api|web>');
-    const { SITE_URL, SUPABASE_PROJECT_REF, SUPABASE_ANON_KEY, RELEASE_SHA } = process.env;
-    assert.ok(SITE_URL && SUPABASE_PROJECT_REF && SUPABASE_ANON_KEY && RELEASE_SHA, 'Missing release verification settings');
+    const { SITE_URL, SUPABASE_PROJECT_REF, SUPABASE_ANON_KEY, RELEASE_SHA, API_REGION } = process.env;
+    assert.ok(SITE_URL && SUPABASE_PROJECT_REF && SUPABASE_ANON_KEY && RELEASE_SHA && API_REGION, 'Missing release verification settings');
     const supabaseUrl = `https://${SUPABASE_PROJECT_REF}.supabase.co`;
-    const settings = { apiUrl: `${supabaseUrl}/functions/v1/api`, siteUrl: new URL(SITE_URL).origin, revision: RELEASE_SHA, supabaseUrl, anonKey: SUPABASE_ANON_KEY };
+    const settings = { apiUrl: `${supabaseUrl}/functions/v1/api`, siteUrl: new URL(SITE_URL).origin, revision: RELEASE_SHA, supabaseUrl, anonKey: SUPABASE_ANON_KEY, region: API_REGION };
     for (let attempt = 0; ; attempt++) {
       try { await verifyRelease(kind, settings); break; }
       catch (error) {

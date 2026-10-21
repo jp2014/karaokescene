@@ -1,15 +1,17 @@
 import { DEMO } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
-import { Award, CheckCircle2, Clock3, LogOut, Mic2, Music2, Send, Star, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Award, CheckCircle2, Clock3, LogOut, Mic2, Music2, Search, Send, Star, X } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar } from '~/components/Avatar';
 import { BusyMeter } from '~/components/BusyMeter';
-import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Toggle } from '~/components/ui';
+import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Pill, Section, Spinner, Toggle } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { VenueCard } from '~/features/discover/VenueCard';
 import { AwardBadgeSheet, PraiseSheet } from '~/features/profile/ProfileActions';
 import { SongRoulette } from '~/features/songs/SongRoulette';
 import { api, unwrap } from '~/lib/api';
+import { useDebounced } from '~/lib/debounce';
 import { ago, duration, serverNow } from '~/lib/format';
 import { useLocation } from '~/lib/location';
 import { qk, useAction, useMe, useMyLive, useMySongs, useVenue, useVenues } from '~/lib/queries';
@@ -99,7 +101,7 @@ function LiveNight({ data }: { data: LiveData }) {
                 ))}
               </div>
             ) : (
-              <EmptyState icon="🎶" title="No songs sent yet" body={data.kj ? 'Pick one from your list below.' : 'Songs open up when the KJ checks in.'} />
+              <EmptyState icon="🎶" title="No songs sent yet" body={data.kj ? 'Search the song book or pick from your list below.' : 'Songs open up when the KJ checks in.'} />
             )}
           </Section>
 
@@ -117,6 +119,16 @@ function LiveNight({ data }: { data: LiveData }) {
                 </span>
               </div>
             )}
+            {data.kj && (
+              <SongBookSearch
+                kj={data.kj}
+                action={(id) => (
+                  <Button size="sm" disabled={!canSubmit || sent.has(id)} onClick={() => submit.mutate({ songId: id, source: 'search' })}>
+                    <Send className="size-3.5" /> {sent.has(id) ? 'Sent' : 'Send'}
+                  </Button>
+                )}
+              />
+            )}
             <Card className="max-h-[420px] divide-y divide-line overflow-y-auto">
               {list.map((s) => (
                 <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
@@ -133,7 +145,9 @@ function LiveNight({ data }: { data: LiveData }) {
                   </Button>
                 </div>
               ))}
-              {!list.length && <div className="p-4 text-sm text-muted">No songs here yet. Add some on your Song List.</div>}
+              {!list.length && (
+                <div className="p-4 text-sm text-muted">{data.kj ? `Nothing from your list yet. Search ${data.kj.displayName}'s song book above.` : 'No songs here yet. Add some on your Song List.'}</div>
+              )}
             </Card>
             <Link to="/songs" className="block text-xs text-muted hover:text-fg">
               + Add songs to your list
@@ -197,6 +211,40 @@ function LiveNight({ data }: { data: LiveData }) {
       </div>
       {praiseTo && <PraiseSheet open onClose={() => setPraiseTo(null)} to={praiseTo} venueId={data.venue.id} />}
       {rate && <AwardBadgeSheet open onClose={() => setRate(null)} to={rate} />}
+    </div>
+  );
+}
+
+/** Singers new to the app have no list yet: let them find a song in the KJ's book and send it straight away. */
+function SongBookSearch({ kj, action }: { kj: { id: string; displayName: string }; action: (songId: string) => React.ReactNode }) {
+  const [q, setQ] = useState('');
+  const dq = useDebounced(q.trim());
+  const search = useQuery({
+    queryKey: ['song-search', dq, kj.id],
+    queryFn: () => unwrap(api.songs.search.$get({ query: { q: dq, kjId: kj.id } })),
+    enabled: dq.length > 1,
+  });
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Search className="absolute top-3 left-4 size-4 text-faint" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${kj.displayName}'s song book…`} aria-label="Search the KJ's song book" className="h-11 w-full !rounded-2xl pl-11 text-sm" />
+        {search.isFetching && <Spinner className="absolute top-3 right-4" />}
+      </div>
+      {dq.length > 1 && search.data && (
+        <Card className="max-h-72 divide-y divide-line overflow-y-auto">
+          {search.data.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold">{s.title}</div>
+                <div className="truncate text-xs text-muted">{s.artist}</div>
+              </div>
+              {action(s.id)}
+            </div>
+          ))}
+          {!search.data.length && <div className="p-4 text-sm text-muted">No match in {kj.displayName}'s song book.</div>}
+        </Card>
+      )}
     </div>
   );
 }

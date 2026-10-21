@@ -55,8 +55,12 @@ export function subscribe(topic: string, handler: Handler) {
   };
 }
 
-/** Refetch `keys` whenever `topic` signals (debounced, so a burst of check-ins is one refetch). */
-export function useLiveQueries(topic: string | null | undefined, keys: QueryKey[], events?: string[]) {
+/**
+ * Refetch `keys` whenever `topic` signals (coalesced, so a burst of check-ins is one refetch).
+ * `spreadMs`: for topics every client hears (the scene), wait a random extra delay up to this,
+ * so one check-in doesn't make every open map refetch in the same instant.
+ */
+export function useLiveQueries(topic: string | null | undefined, keys: QueryKey[], events?: string[], spreadMs = 0) {
   const qc = useQueryClient();
   const latest = useRef({ keys, events });
   latest.current = { keys, events };
@@ -65,12 +69,16 @@ export function useLiveQueries(topic: string | null | undefined, keys: QueryKey[
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = subscribe(topic, (event) => {
       if (latest.current.events && !latest.current.events.includes(event)) return;
-      clearTimeout(timer);
-      timer = setTimeout(() => latest.current.keys.forEach((queryKey) => qc.invalidateQueries({ queryKey })), 300);
+      // One refetch per burst: later signals join the pending one instead of postponing it.
+      if (timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        latest.current.keys.forEach((queryKey) => qc.invalidateQueries({ queryKey }));
+      }, 300 + Math.random() * spreadMs);
     });
     return () => {
       clearTimeout(timer);
       off();
     };
-  }, [topic, qc]);
+  }, [topic, qc, spreadMs]);
 }

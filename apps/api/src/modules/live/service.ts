@@ -46,15 +46,11 @@ export const live = {
     if (!session) return { session: null, venue: null, venues: myVenues, singers: [], submitted: [], accepted: [], departures: [], premium };
     const venue = (await venues.byId(session.venueId))!;
     const here = await presence.here(venue.id, kj);
-    const singers = await Promise.all(
-      here
-        .filter((u) => u.role === 'singer')
-        .map(async (u) => {
-          const list = await songLists.forUser(u.id);
-          return { ...u, goTo: list.filter((s) => s.isGoTo).slice(0, 3), listSize: list.length, badges: (await reputation.summary(u.id)).slice(0, 3) };
-        }),
-    );
-    const all = await submissionsFor(session.id);
+    const singerRows = here.filter((u) => u.role === 'singer');
+    const singerIds = singerRows.map((u) => u.id);
+    // One query per kind for the whole room: the booth refetches on every check-in and submission.
+    const [lists, badges, all] = await Promise.all([songLists.goToSummaries(singerIds), reputation.summaries(singerIds), submissionsFor(session.id)]);
+    const singers = singerRows.map((u) => ({ ...u, ...lists.get(u.id)!, badges: badges.get(u.id)!.slice(0, 3) }));
     // Auto Leave is a KJ Pro feature: free KJs don't get the departures list.
     const left = premium
       ? await db

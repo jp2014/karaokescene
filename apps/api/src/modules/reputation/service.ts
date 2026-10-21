@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { cardsById } from '../../lib/cards.ts';
 import { clock } from '../../lib/clock.ts';
@@ -15,13 +15,24 @@ export const reputation = {
 
   /** Badge counts and tiers for a profile, best first. */
   async summary(userId: string) {
-    const rows = await db.select().from(A).where(eq(A.recipientId, userId));
-    const counts = new Map<string, number>();
-    for (const r of rows) counts.set(r.badgeKey, (counts.get(r.badgeKey) ?? 0) + 1);
-    return [...counts.entries()]
-      .map(([key, count]) => ({ ...badgeByKey.get(key)!, count, tier: tierFor(count) }))
-      .filter((b) => b.key)
-      .sort((a, b) => b.count - a.count);
+    return (await reputation.summaries([userId])).get(userId)!;
+  },
+
+  /** `summary` for many profiles in one query (lists like the KJ booth). */
+  async summaries(userIds: string[]) {
+    const ids = [...new Set(userIds)];
+    const rows = ids.length
+      ? await db.select({ recipientId: A.recipientId, badgeKey: A.badgeKey, n: sql<number>`count(*)` }).from(A).where(inArray(A.recipientId, ids)).groupBy(A.recipientId, A.badgeKey)
+      : [];
+    return new Map(
+      ids.map((id) => [
+        id,
+        rows
+          .filter((r) => r.recipientId === id && badgeByKey.has(r.badgeKey))
+          .map((r) => ({ ...badgeByKey.get(r.badgeKey)!, count: Number(r.n), tier: tierFor(Number(r.n)) }))
+          .sort((a, b) => b.count - a.count),
+      ]),
+    );
   },
 
   /** Badges this giver can hand to this recipient, with whether they already did today. */

@@ -103,32 +103,34 @@ export const discovery = {
     const v = (await venues.bySlug(slug)) ?? notFound('Venue');
     const venue = v!;
     const now = clock.now();
-    const hidden = await social.hiddenIds(viewer?.id);
-    const [nights, kjSession, here, events, specials, gallery, whosGoing, peak, kjs, favIds, owner] = await Promise.all([
+    // Independent reads start together; each round trip to the database adds latency in production.
+    const premierOnly = <T,>(p: () => Promise<T>) => (venue.isPremiere ? p() : Promise.resolve(null));
+    const [nights, kjSession, here, events, specials, gallery, whosGoing, peak, kjs, favIds, owner, myCheckin, friendList, myVisits] = await Promise.all([
       venues.nightsFor(venue.id),
       presence.activeKjSession(venue.id),
       presence.here(venue.id, viewer),
       venues.upcomingEvents(venue.id, 6),
       venues.specialsFor(venue.id),
       venues.gallery(venue.id),
-      venues.whosGoing(venue.id, viewer?.id, hidden),
-      presence.peakHours(venue.id),
+      premierOnly(async () => venues.whosGoing(venue.id, viewer?.id, await social.hiddenIds(viewer?.id))),
+      premierOnly(() => presence.peakHours(venue.id)),
       venues.kjsFor(venue.id),
       viewer ? social.favoriteVenueIds(viewer.id) : Promise.resolve([] as string[]),
       db.select().from(schema.users).where(inArray(schema.users.id, [venue.ownerId])),
-    ]);
-    const kjCards = await cardsById([...nights.map((n) => n.kjId).filter((x): x is string => !!x), ...(kjSession ? [kjSession.kjId] : [])]);
-    const liveN = liveNight(nights, now);
-    const myCheckin = viewer ? await presence.currentCheckin(viewer.id) : null;
-    const friendIds = new Set(viewer ? await social.friendIds(viewer.id) : []);
-    const kjBadges = await Promise.all(kjs.map(async (k) => ({ ...k, badges: (await reputation.summary(k.id)).slice(0, 4) })));
-    const [ratings, createdBy, myVisits] = await Promise.all([
-      reputation.summary(venue.ownerId),
-      venue.createdById ? cardsById([venue.createdById]).then((m) => m.get(venue.createdById!) ?? null) : Promise.resolve(null),
+      viewer ? presence.currentCheckin(viewer.id) : Promise.resolve(null),
+      viewer ? social.friendIds(viewer.id) : Promise.resolve([] as string[]),
       viewer?.role === 'singer' ? presence.visitCount(viewer.id, venue.id) : Promise.resolve(0),
     ]);
-    // Who's Going and Peak Hours are Venue Premier features: only shown for Premier venues.
-    const premier = venue.isPremiere;
+    const kjIds = [...nights.map((n) => n.kjId).filter((x): x is string => !!x), ...(kjSession ? [kjSession.kjId] : [])];
+    const [kjCards, badges] = await Promise.all([
+      cardsById([...kjIds, ...(venue.createdById ? [venue.createdById] : [])]),
+      reputation.summaries([venue.ownerId, ...kjs.map((k) => k.id)]),
+    ]);
+    const liveN = liveNight(nights, now);
+    const friendIds = new Set(friendList);
+    const kjBadges = kjs.map((k) => ({ ...k, badges: badges.get(k.id)!.slice(0, 4) }));
+    const ratings = badges.get(venue.ownerId)!;
+    const createdBy = venue.createdById ? (kjCards.get(venue.createdById) ?? null) : null;
     return {
       now,
       venue: { ...venue, ownerHandle: owner[0]?.handle ?? null, createdBy },
@@ -143,8 +145,9 @@ export const discovery = {
       events,
       specials,
       gallery,
-      whosGoing: premier ? whosGoing : null,
-      peakHours: premier ? peak : null,
+      // Who's Going and Peak Hours are Venue Premier features: only shown for Premier venues.
+      whosGoing,
+      peakHours: peak,
       kjs: kjBadges,
       isFavorite: favIds.includes(venue.id),
       myCheckin: myCheckin?.venueId === venue.id ? myCheckin : null,

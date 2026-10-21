@@ -216,9 +216,7 @@ export const presence = {
           ne(schema.favorites.userId, kj.id),
         ),
       );
-    for (const userId of new Set(fans.map((f) => f.userId))) {
-      await notifications.send(userId, { kind: 'kj-now', title: `🎤 ${kj.displayName} is live now`, body: `at ${venue!.name}`, link: `/venues/${venue!.slug}` });
-    }
+    await notifications.sendMany([...new Set(fans.map((f) => f.userId))].map((userId) => ({ userId, kind: 'kj-now', title: `🎤 ${kj.displayName} is live now`, body: `at ${venue!.name}`, link: `/venues/${venue!.slug}` })));
     return row;
   },
 
@@ -292,11 +290,10 @@ export const presence = {
   async promoteTonight(sender: User, _center: LatLng, radiusMi: number, show: { venueId: string; venueName: string; venueSlug: string; when: string }) {
     const venue = (await venues.byId(show.venueId)) ?? notFound('Venue');
     const near = (await presence.singersNear(sender, venue, radiusMi)).filter((s) => s.checkedInVenueId !== show.venueId);
-    let sent = 0;
-    for (const s of near) {
-      const created = await notifications.send(s.id, { kind: 'promo', title: `🎤 ${sender.displayName}: karaoke tonight!`, body: `${show.venueName} · ${show.when}. Come sing with us.`, link: `/venues/${show.venueSlug}` }, `ntf_promo_${sender.id}_${s.id}_${nightOf(clock.now())}`);
-      if (created) sent++;
-    }
+    const night = nightOf(clock.now());
+    const sent = await notifications.sendMany(
+      near.map((s) => ({ userId: s.id, kind: 'promo', title: `🎤 ${sender.displayName}: karaoke tonight!`, body: `${show.venueName} · ${show.when}. Come sing with us.`, link: `/venues/${show.venueSlug}`, dedupeId: `ntf_promo_${sender.id}_${s.id}_${night}` })),
+    );
     return { sent, skipped: near.length - sent };
   },
 };

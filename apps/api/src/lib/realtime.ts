@@ -24,6 +24,14 @@ export const realtime = {
     defer('realtime publish', () => transport([{ topic, event, payload }]));
   },
 
+  /** Fan-out (one signal per recipient), sent in a few requests rather than one each. */
+  publishMany(messages: RealtimeMessage[]) {
+    for (let i = 0; i < messages.length; i += 100) {
+      const chunk = messages.slice(i, i + 100);
+      defer('realtime publish', () => transport(chunk));
+    }
+  },
+
   /** Someone arrived or left: the venue's screens and the map both care. */
   presenceChanged(venueId: string) {
     defer('realtime publish', () =>

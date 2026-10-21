@@ -1,6 +1,9 @@
 import { parse } from 'csv-parse/sync';
 import { fail } from '../../lib/http.ts';
 
+/** Longer titles/artists are export glitches (a whole row in one field), not songs. */
+const MAX_FIELD = 200;
+
 /** The first delimiter outside quoted fields identifies CSV versus TSV. */
 function delimiterOf(text: string) {
   let quoted = false;
@@ -30,7 +33,7 @@ export function parseSongbook(text: string) {
   let skipped = 0;
   for (const record of records) {
     const [title, artist, genre, year] = record.map((value) => value.trim());
-    if (!title || !artist || /^title$/i.test(title)) { skipped++; continue; }
+    if (!title || !artist || /^title$/i.test(title) || title.length > MAX_FIELD || artist.length > MAX_FIELD) { skipped++; continue; }
     songs.push({ title, artist, genre: genre || 'Other', year: Number(year) || undefined });
   }
   return { songs, skipped, lines: records.length };

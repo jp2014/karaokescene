@@ -47,6 +47,13 @@ export function transactionPoolerUrl(cached, password, ref) {
   return url.href;
 }
 
+/** The project's AWS region, from its pooler host (aws-<n>-<region>.pooler.supabase.com). */
+export function databaseRegion(poolerUrl) {
+  const match = /^aws-\d+-([a-z]{2}(?:-[a-z]+)+-\d+)\.pooler\.supabase\.com$/.exec(new URL(poolerUrl.trim()).hostname);
+  if (!match) throw new Error('Could not tell the database region from the pooler URL that supabase link recorded.');
+  return match[1];
+}
+
 export function release({ env = process.env, checkOnly = false, run = execFileSync, writeAsset = writeFileSync, readPoolerUrl } = {}) {
   const root = resolve(import.meta.dirname, '..');
   const cfg = releaseConfig(env);
@@ -60,28 +67,36 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   invoke('pnpm', ['typecheck']);
   // node --import avoids tsx's IPC listener and works in restricted local environments.
   invoke('node', ['--import', 'tsx', 'scripts/build-edge.ts'], { cwd: join(root, 'apps/api'), env: releaseEnv });
+  // Linking only reads the project (and records its pooler URL locally); nothing remote changes
+  // until `db push`. The frontend needs the database region, so it builds after the link.
+  let poolerUrl, region;
+  if (!checkOnly) {
+    step(`Supabase: link ${cfg.ref}`);
+    supabase('link', '--project-ref', cfg.ref);
+    // link records the pooler only on a best-effort basis; resolve it before changing anything remote.
+    let cachedPooler;
+    try {
+      cachedPooler = (readPoolerUrl ?? (() => readFileSync(join(root, 'supabase/.temp/pooler-url'), 'utf8')))();
+    } catch {
+      throw new Error('supabase link did not record the database pooler URL (Supabase API unavailable?). Rerun the release.');
+    }
+    poolerUrl = transactionPoolerUrl(cachedPooler, env.SUPABASE_DB_PASSWORD, cfg.ref);
+    region = databaseRegion(cachedPooler);
+  }
   const webEnv = {
-    ...env, VITE_DEMO: 'false', VITE_API_URL: `${cfg.supabaseUrl}/functions/v1/api`,
+    ...env, VITE_DEMO: 'false', VITE_API_URL: `${cfg.supabaseUrl}/functions/v1/api`, VITE_API_REGION: region ?? '',
     VITE_SUPABASE_URL: cfg.supabaseUrl, VITE_SUPABASE_ANON_KEY: cfg.anonKey,
   };
   // Push is deliberately dormant for launch, even if the shell has Firebase settings.
   for (const key of Object.keys(webEnv)) if (key.startsWith('VITE_FIREBASE_')) webEnv[key] = '';
   invoke('pnpm', ['--filter', '@ks/web', 'build'], { env: webEnv });
-  writeAsset(join(root, 'apps/web/dist/release.json'), JSON.stringify({ revision, apiUrl: `${cfg.supabaseUrl}/functions/v1/api` }) + '\n');
+  writeAsset(join(root, 'apps/web/dist/release.json'), JSON.stringify({ revision, apiUrl: `${cfg.supabaseUrl}/functions/v1/api`, apiRegion: region ?? null }) + '\n');
   if (checkOnly) {
     console.log('\n✓ Release check passed. No remote changes made. Auth configuration and account access still require verification.');
     return;
   }
-  step(`Supabase: link ${cfg.ref} and push migrations`);
-  supabase('link', '--project-ref', cfg.ref);
-  // link records the pooler only on a best-effort basis; resolve it before changing anything remote.
-  let cachedPooler;
-  try {
-    cachedPooler = (readPoolerUrl ?? (() => readFileSync(join(root, 'supabase/.temp/pooler-url'), 'utf8')))();
-  } catch {
-    throw new Error('supabase link did not record the database pooler URL (Supabase API unavailable?). Rerun the release.');
-  }
-  const poolerUrl = transactionPoolerUrl(cachedPooler, env.SUPABASE_DB_PASSWORD, cfg.ref);
+  const verifyEnv = { ...releaseEnv, API_REGION: region };
+  step('Supabase: push migrations');
   supabase('db', 'push', '--linked');
   step('Supabase: configure API origins and database pooler');
   const dir = mkdtempSync(join(tmpdir(), 'ks-secrets-'));
@@ -99,12 +114,12 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   step('Supabase: deploy API');
   supabase('functions', 'deploy', 'api', '--project-ref', cfg.ref, '--no-verify-jwt', '--use-api');
   step('Verify deployed API and database before publishing the frontend');
-  invoke('node', ['scripts/verify-release.mjs', 'api'], { env: releaseEnv });
+  invoke('node', ['scripts/verify-release.mjs', 'api'], { env: verifyEnv });
   step('Cloudflare Workers: deploy static web app');
   invoke('pnpm', ['exec', 'wrangler', 'deploy', '--config', 'wrangler.jsonc', '--name', cfg.worker]);
   step('Verify deployed frontend and API connectivity');
-  invoke('node', ['scripts/verify-release.mjs', 'web'], { env: releaseEnv });
-  invoke('node', ['scripts/e2e/production-smoke.mjs'], { env: releaseEnv });
+  invoke('node', ['scripts/verify-release.mjs', 'web'], { env: verifyEnv });
+  invoke('node', ['scripts/e2e/production-smoke.mjs'], { env: verifyEnv });
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `## Production release\n\nCommit: \`${revision}\`\n\nWeb: ${cfg.siteUrl}\n\nAPI: ${cfg.supabaseUrl}/functions/v1/api\n`);
   console.log(`\n✓ Released. Web: ${cfg.siteUrl} · API: ${cfg.supabaseUrl}/functions/v1/api`);
 }

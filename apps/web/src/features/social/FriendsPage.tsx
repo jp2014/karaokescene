@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Ban, Check, Heart, Megaphone, PartyPopper, Radar, Search, UserPlus, X } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
+import { useDebounced } from '~/lib/debounce';
 import { Avatar, UserRow } from '~/components/Avatar';
 import { Button, Card, cx, EmptyState, PageLoader, Pill, Section, Segmented, Sheet } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
@@ -268,7 +269,7 @@ function SingersNearYou() {
 
 function FriendFinder() {
   const [q, setQ] = useState('');
-  const dq = useDeferredValue(q);
+  const dq = useDebounced(q);
   const loc = useLocation();
   const search = useQuery({ queryKey: ['people', dq], queryFn: () => unwrap(api.profiles.search.$get({ query: { q: dq } })) });
   const near = useQuery({

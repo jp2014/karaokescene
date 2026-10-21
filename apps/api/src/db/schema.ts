@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { bigint, boolean, doublePrecision, index, integer, jsonb, pgSchema, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
 
 /**
@@ -109,13 +110,21 @@ export const kjVenueLinks = table(
 );
 
 /** "KJ Now": a KJ is on-site and running the show. */
-export const kjSessions = table('kj_sessions', {
-  id: text('id').primaryKey(),
-  kjId: text('kj_id').notNull(),
-  venueId: text('venue_id').notNull(),
-  startedAt: ts('started_at').notNull(),
-  endedAt: ts('ended_at'),
-});
+export const kjSessions = table(
+  'kj_sessions',
+  {
+    id: text('id').primaryKey(),
+    kjId: text('kj_id').notNull(),
+    venueId: text('venue_id').notNull(),
+    startedAt: ts('started_at').notNull(),
+    endedAt: ts('ended_at'),
+  },
+  // Lookups are for the open session (by KJ, by venue, or all of them for "KJ Now").
+  (t) => [
+    index('kj_sessions_open_kj_idx').on(t.kjId).where(sql`${t.endedAt} is null`),
+    index('kj_sessions_open_venue_idx').on(t.venueId).where(sql`${t.endedAt} is null`),
+  ],
+);
 
 export const checkins = table(
   'checkins',
@@ -128,7 +137,12 @@ export const checkins = table(
     checkedOutAt: ts('checked_out_at'),
     checkoutReason: text('checkout_reason').$type<'manual' | 'auto-leave' | 'closing'>(),
   },
-  (t) => [index('checkins_venue_idx').on(t.venueId, t.checkedOutAt)],
+  (t) => [
+    index('checkins_venue_idx').on(t.venueId, t.checkedOutAt),
+    // Every heartbeat and most screens ask for one person's open check-in; map counts read all open ones.
+    index('checkins_user_idx').on(t.userId, t.venueId),
+    index('checkins_open_idx').on(t.checkedInAt).where(sql`${t.checkedOutAt} is null`),
+  ],
 );
 
 export const events = table('events', {
@@ -175,13 +189,19 @@ export const galleryItems = table('gallery_items', {
   createdAt: ts('created_at').notNull(),
 });
 
-export const songs = table('songs', {
-  id: text('id').primaryKey(),
-  title: text('title').notNull(),
-  artist: text('artist').notNull(),
-  genre: text('genre').notNull(),
-  decade: text('decade').notNull(),
-});
+export const songs = table(
+  'songs',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    artist: text('artist').notNull(),
+    genre: text('genre').notNull(),
+    decade: text('decade').notNull(),
+  },
+  // Songbook imports match songs case-insensitively by title + artist. Hashed, because a B-tree
+  // entry can't exceed ~2.7KB and nothing ever bounded these fields; queries add md5 equality.
+  (t) => [index('songs_title_artist_md5_idx').on(sql`md5(lower(${t.title}))`, sql`md5(lower(${t.artist}))`)],
+);
 
 export const songListEntries = table(
   'song_list_entries',
@@ -197,23 +217,28 @@ export const songListEntries = table(
 export const songbookEntries = table(
   'songbook_entries',
   { kjId: text('kj_id').notNull(), songId: text('song_id').notNull() },
-  (t) => [primaryKey({ columns: [t.kjId, t.songId] })],
+  // song_id: "is this song in any songbook" (the public catalog).
+  (t) => [primaryKey({ columns: [t.kjId, t.songId] }), index('songbook_entries_song_idx').on(t.songId)],
 );
 
 /**
  * A singer's song submission to the KJ running the show. The app does not mirror the KJ's
  * own rotation software: the KJ just accepts a submission once it's in their system.
  */
-export const songRequests = table('song_requests', {
-  id: text('id').primaryKey(),
-  kjSessionId: text('kj_session_id').notNull(),
-  singerId: text('singer_id').notNull(),
-  songId: text('song_id').notNull(),
-  source: text('source').$type<'list' | 'roulette' | 'search' | 'kj'>().notNull(),
-  status: text('status').$type<'submitted' | 'accepted' | 'declined' | 'withdrawn'>().notNull(),
-  createdAt: ts('created_at').notNull(),
-  decidedAt: ts('decided_at'),
-});
+export const songRequests = table(
+  'song_requests',
+  {
+    id: text('id').primaryKey(),
+    kjSessionId: text('kj_session_id').notNull(),
+    singerId: text('singer_id').notNull(),
+    songId: text('song_id').notNull(),
+    source: text('source').$type<'list' | 'roulette' | 'search' | 'kj'>().notNull(),
+    status: text('status').$type<'submitted' | 'accepted' | 'declined' | 'withdrawn'>().notNull(),
+    createdAt: ts('created_at').notNull(),
+    decidedAt: ts('decided_at'),
+  },
+  (t) => [index('song_requests_session_idx').on(t.kjSessionId, t.singerId)],
+);
 
 /** Venue Coupons: awarded by a venue to a singer, redeemed once when the venue scans the QR. */
 export const coupons = table(
@@ -233,24 +258,32 @@ export const coupons = table(
   (t) => [index('coupons_singer_idx').on(t.singerId)],
 );
 
-export const badgeAwards = table('badge_awards', {
-  id: text('id').primaryKey(),
-  badgeKey: text('badge_key').notNull(),
-  recipientId: text('recipient_id').notNull(),
-  giverId: text('giver_id').notNull(),
-  createdAt: ts('created_at').notNull(),
-});
+export const badgeAwards = table(
+  'badge_awards',
+  {
+    id: text('id').primaryKey(),
+    badgeKey: text('badge_key').notNull(),
+    recipientId: text('recipient_id').notNull(),
+    giverId: text('giver_id').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('badge_awards_recipient_idx').on(t.recipientId)],
+);
 
-export const praise = table('praise', {
-  id: text('id').primaryKey(),
-  fromId: text('from_id').notNull(),
-  toId: text('to_id').notNull(),
-  venueId: text('venue_id'),
-  songId: text('song_id'),
-  emoji: text('emoji').notNull(),
-  message: text('message').notNull(),
-  createdAt: ts('created_at').notNull(),
-});
+export const praise = table(
+  'praise',
+  {
+    id: text('id').primaryKey(),
+    fromId: text('from_id').notNull(),
+    toId: text('to_id').notNull(),
+    venueId: text('venue_id'),
+    songId: text('song_id'),
+    emoji: text('emoji').notNull(),
+    message: text('message').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('praise_to_idx').on(t.toId, t.createdAt), index('praise_created_idx').on(t.createdAt)],
+);
 
 export const friendships = table(
   'friendships',
@@ -260,7 +293,7 @@ export const friendships = table(
     status: text('status').$type<'pending' | 'accepted'>().notNull(),
     createdAt: ts('created_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.requesterId, t.addresseeId] })],
+  (t) => [primaryKey({ columns: [t.requesterId, t.addresseeId] }), index('friendships_addressee_idx').on(t.addresseeId)],
 );
 
 export const favorites = table(
@@ -271,13 +304,13 @@ export const favorites = table(
     targetId: text('target_id').notNull(),
     createdAt: ts('created_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.targetType, t.targetId] })],
+  (t) => [primaryKey({ columns: [t.userId, t.targetType, t.targetId] }), index('favorites_target_idx').on(t.targetId)],
 );
 
 export const blocks = table(
   'blocks',
   { userId: text('user_id').notNull(), blockedId: text('blocked_id').notNull(), createdAt: ts('created_at').notNull() },
-  (t) => [primaryKey({ columns: [t.userId, t.blockedId] })],
+  (t) => [primaryKey({ columns: [t.userId, t.blockedId] }), index('blocks_blocked_idx').on(t.blockedId)],
 );
 
 export const notifications = table(

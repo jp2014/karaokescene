@@ -13,7 +13,7 @@ export function useRealtimeSync(me: Me | undefined) {
   const myVenue = me?.kjSession?.venueId ?? me?.checkin?.venueId;
   useLiveQueries(me ? `user:${me.id}` : null, [qk.notifications, qk.booth, qk.myLive, qk.me, qk.wallet, ['issued']]);
   useLiveQueries(myVenue ? `venue:${myVenue}` : null, [qk.booth, qk.myLive, qk.me]);
-  useLiveQueries(me ? 'scene' : null, [['venues']]);
+  useLiveQueries(me ? 'scene' : null, [['venues']], undefined, 3_000);
   useEffect(() => {
     if (me?.id) refreshPushToken();
   }, [me?.id]);
