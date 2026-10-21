@@ -1,13 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { Building2, CalendarClock, MapPin, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
+import { Building2, CalendarClock, Lock, Megaphone, Plus, Save, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, cx, EmptyState, PageLoader, Pill, Sheet, Toggle } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
 import { DAYS, dayTimeLabel, endAfter, fromTimeInput, hoursLabel, toTimeInput } from '~/lib/format';
-import { useLocation } from '~/lib/location';
-import { qk, useAction, useMyVenues, type MyVenue } from '~/lib/queries';
-import { VENUE_TYPES, type VenueType } from '~/lib/venues';
+import { qk, useAction, useMe, useMyVenues, type MyVenue } from '~/lib/queries';
+import { UpgradeSheet } from '~/components/Premium';
+import { useVenuePlace, VenuePlaceFields } from '~/features/venue/VenuePlaceFields';
 
 type Night = { dayOfWeek: number; startMin: number; endMin: number };
 
@@ -23,7 +23,7 @@ export function MyVenuesPage() {
           <h1 className="text-3xl font-extrabold">
             My <span className="text-gradient">Venues</span>
           </h1>
-          <p className="mt-1 text-muted">Set your hours at each venue and let Auto Promote post your nights for you.</p>
+          <p className="mt-1 text-muted">Set your hours at each venue. Auto Promote reminds you to share each night a day ahead.</p>
         </div>
         <Button variant="primary" onClick={() => setAdding(true)}>
           <Plus className="size-4" /> Add a venue
@@ -49,8 +49,10 @@ function VenueCard({ v }: { v: MyVenue }) {
   const [editing, setEditing] = useState(false);
   const promote = useAction((on: boolean) => unwrap(api.venues[':venueId']['auto-promote'].$put({ param: { venueId: v.id }, json: { on } })), {
     invalidate: [qk.myVenues, ['posts']],
-    success: (r) => (r.on ? (r.next ? `Auto Promote on. Next post ${dayTimeLabel(r.next.scheduledFor)}` : 'Auto Promote on') : 'Auto Promote off'),
+    success: (r) => (r.on ? (r.next ? `Auto Promote on. Next reminder ${dayTimeLabel(r.next.scheduledFor)}` : 'Auto Promote on') : 'Auto Promote off'),
   });
+  const { data: me } = useMe();
+  const [plan, setPlan] = useState(false);
   return (
     <Card className="overflow-hidden">
       <div className="relative">
@@ -99,9 +101,16 @@ function VenueCard({ v }: { v: MyVenue }) {
           <Megaphone className="size-5 shrink-0 text-pink" />
           <div className="min-w-0 flex-1 text-sm">
             <div className="font-semibold">Auto Promote</div>
-            <div className="text-xs text-muted">Posts each of your nights here 24 hours before it starts.</div>
+            <div className="text-xs text-muted">A reminder to share each of your nights here, 24 hours before it starts.</div>
           </div>
-          <Toggle on={v.autoPromote} onChange={(on) => promote.mutate(on)} label="Auto Promote" disabled={!mine.length} />
+          {me?.isPremium ? (
+            <Toggle on={v.autoPromote} onChange={(on) => promote.mutate(on)} label="Auto Promote" disabled={!mine.length} />
+          ) : (
+            <button onClick={() => setPlan(true)} className="flex items-center gap-1 text-xs font-semibold text-gold">
+              <Lock className="size-3.5" /> KJ Pro
+            </button>
+          )}
+          <UpgradeSheet open={plan} onClose={() => setPlan(false)} feature="Auto Promote" />
         </div>
         {!v.claimed && <p className="text-xs text-faint">The owner hasn't claimed this venue yet. Once they do, they can add photos, specials and coupons. Your nights stay as they are.</p>}
       </div>
@@ -161,50 +170,23 @@ function NightRow({ night, onChange, onRemove }: { night: Night; onChange: (p: P
 
 /** KJs can list a venue whose owner isn't on Karaoke Scene yet. */
 function AddVenueSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const loc = useLocation();
-  const [form, setForm] = useState({ name: '', address: '', neighborhood: '', city: 'Omaha' });
-  const [types, setTypes] = useState<VenueType[]>(['Bar']);
+  const placeState = useVenuePlace();
   const [night, setNight] = useState<Night>({ dayOfWeek: 2, startMin: 21 * 60, endMin: 25 * 60 });
-  const create = useAction(
-    () => unwrap(api.venues.$post({ json: { ...form, venueTypes: types, nights: [night], lat: loc.current.lat + (Math.random() - 0.5) * 0.004, lng: loc.current.lng + (Math.random() - 0.5) * 0.004 } })),
-    {
-      invalidate: [qk.myVenues, qk.booth, ['venues']],
-      success: (v) => `${v.name} is on the map 🎉`,
-      onSuccess: () => {
-        onClose();
-        setForm({ name: '', address: '', neighborhood: '', city: 'Omaha' });
-      },
-    },
-  );
-  const set = (k: keyof typeof form, v: string) => setForm({ ...form, [k]: v });
+  const create = useAction(() => unwrap(api.venues.$post({ json: { ...placeState.place, nights: [night] } })), {
+    invalidate: [qk.myVenues, qk.booth, ['venues']],
+    success: (v) => `${v.name} is on the map 🎉`,
+    onSuccess: onClose,
+  });
   return (
     <Sheet open={open} onClose={onClose} title="Add a venue">
       <p className="mb-4 text-sm text-muted">Host somewhere that isn't on Karaoke Scene yet? Add it so singers can find your night. The owner can claim the listing later.</p>
       <div className="space-y-3">
-        <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Venue name" className="w-full" />
-        <input value={form.address} onChange={(e) => set('address', e.target.value)} placeholder="Street address" className="w-full" />
-        <div className="flex gap-2">
-          <input value={form.neighborhood} onChange={(e) => set('neighborhood', e.target.value)} placeholder="Neighborhood" className="min-w-0 flex-1" />
-          <input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="City" className="min-w-0 flex-1" />
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <MapPin className="size-3.5" /> Pinned at your current location ({loc.label})
-        </div>
-        <div>
-          <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Venue type</div>
-          <div className="flex flex-wrap gap-1.5">
-            {VENUE_TYPES.map((t) => (
-              <button key={t} onClick={() => setTypes(types.includes(t) ? types.filter((x) => x !== t) : [...types, t])} className={cx('rounded-full border px-3 py-1.5 text-xs font-semibold', types.includes(t) ? 'border-pink bg-pink/15' : 'border-line text-muted')}>
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
+        {open && <VenuePlaceFields state={placeState} />}
         <div>
           <div className="mb-1.5 text-xs font-semibold tracking-wide text-muted uppercase">Your karaoke night</div>
           <NightRow night={night} onChange={(p) => setNight({ ...night, ...p })} />
         </div>
-        <Button variant="primary" className="w-full" disabled={form.name.trim().length < 2 || form.address.trim().length < 3} loading={create.isPending} onClick={() => create.mutate(undefined)}>
+        <Button variant="primary" className="w-full" disabled={!placeState.valid} loading={create.isPending} onClick={() => create.mutate(undefined)}>
           Add venue
         </Button>
       </div>

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { requireViewer, type AppEnv } from '../../lib/context.ts';
+import { requirePremium } from '../../lib/plans.ts';
 import { songCatalog, songLists, songbooks } from './service.ts';
 
 export const songRoutes = new Hono<AppEnv>()
@@ -14,7 +15,11 @@ export const songRoutes = new Hono<AppEnv>()
     const { title, artist } = c.req.valid('json');
     return c.json(await songLists.addCustom(requireViewer(c).id, title, artist));
   })
-  .get('/recommendations', async (c) => c.json(await songLists.recommend(requireViewer(c).id)))
+  .get('/recommendations', async (c) => {
+    const viewer = requireViewer(c);
+    await requirePremium(viewer, 'Smart recommendations');
+    return c.json(await songLists.recommend(viewer.id));
+  })
   .put('/mine/:songId', async (c) => {
     await songLists.add(requireViewer(c).id, c.req.param('songId'));
     return c.json({ ok: true });

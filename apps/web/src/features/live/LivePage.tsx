@@ -1,3 +1,4 @@
+import { DEMO } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { Award, CheckCircle2, Clock3, LogOut, Mic2, Music2, Send, Star, X } from 'lucide-react';
 import { useState } from 'react';
@@ -214,7 +215,7 @@ function NotCheckedIn() {
       <Card className="flex flex-wrap items-center gap-4 p-5">
         <div className="text-4xl">📍</div>
         <div className="flex-1 text-sm text-muted">
-          Walk into a venue and Karaoke Scene offers to check you in automatically, or scan the QR code by the stage. For the demo, use <b className="text-fg">Demo controls → Stand inside venue</b>.
+          Walk into a venue and Karaoke Scene offers to check you in automatically, or scan the QR code by the stage.{DEMO && <> For the demo, use <b className="text-fg">Demo controls → Stand inside venue</b>.</>}
         </div>
         <Link to="/scan">
           <Button variant="primary">Scan venue QR</Button>
@@ -228,7 +229,7 @@ function NotCheckedIn() {
             ))}
           </div>
         ) : (
-          <EmptyState icon="🌙" title="Nothing live right now" body="Time-travel to a Friday night from Demo controls to see the scene in action." />
+          <EmptyState icon="🌙" title="Nothing live right now" body={DEMO ? 'Time-travel to a Friday night from Demo controls to see the scene in action.' : 'Check back tonight, or browse upcoming nights on Discover.'} />
         )}
       </Section>
     </div>

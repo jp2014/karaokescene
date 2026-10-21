@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { customAlphabet } from 'nanoid';
 import { db, schema } from '../../db/client.ts';
 import { cardsById } from '../../lib/cards.ts';
@@ -7,6 +7,7 @@ import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
 import { notifications } from '../notifications/service.ts';
+import { social } from '../social/service.ts';
 import { venues } from '../venues/service.ts';
 
 const C = schema.coupons;
@@ -44,6 +45,7 @@ export const wallet = {
     const venue = (await venues.ownedBy(venueUser.id)) ?? fail(403, 'Only venues can award coupons');
     const singer = (await db.query.users.findFirst({ where: eq(schema.users.id, input.singerId) })) ?? notFound('Singer');
     if (singer!.role !== 'singer') fail(400, 'Coupons go to singers');
+    if ((await social.hiddenIds(venueUser.id)).has(singer!.id)) notFound('Singer');
     const now = clock.now();
     const row = { id: newId('cpn'), code: newCode(), venueId: venue!.id, singerId: singer!.id, title: input.title, details: input.details, expiresAt: now + input.validDays * DAY, redeemedAt: null, createdAt: now };
     await db.insert(C).values(row);
@@ -60,7 +62,9 @@ export const wallet = {
     if (status === 'redeemed') fail(409, 'Already redeemed');
     if (status === 'expired') fail(409, 'This coupon has expired');
     const now = clock.now();
-    await db.update(C).set({ redeemedAt: now }).where(and(eq(C.id, coupon!.id)));
+    // Conditional update so two scans at once can't both redeem it.
+    const [won] = await db.update(C).set({ redeemedAt: now }).where(and(eq(C.id, coupon!.id), isNull(C.redeemedAt), gte(C.expiresAt, now))).returning({ id: C.id });
+    if (!won) fail(409, 'Already redeemed');
     await notifications.send(coupon!.singerId, { kind: 'coupon', title: `✅ Coupon redeemed at ${venue!.name}`, body: coupon!.title, link: '/wallet' });
     const [full] = await withVenues([{ ...coupon!, redeemedAt: now }]);
     return full;

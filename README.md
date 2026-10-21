@@ -1,7 +1,7 @@
-# Karaoke Scene: POC
+# Karaoke Scene
 
 A location-based social network for the karaoke community: **Singers**, **KJs** and **Venues** in one ecosystem.
-This is a high-fidelity, functional demo seeded with a fictional Omaha scene.
+Production uses Supabase Auth, Postgres, Storage and Realtime through a Hono API. Local development includes a fictional Omaha scene; production starts empty.
 
 ## Run it
 
@@ -10,16 +10,18 @@ pnpm install
 pnpm dev
 ```
 
-Open **http://localhost:5173**. The first run creates and seeds a SQLite database automatically.
+Open **http://localhost:5173**. No Docker or accounts needed: the first run creates an embedded Postgres
+(PGlite, in `apps/api/data`) with the same migrations production uses, and seeds the demo scene.
 On your phone (same Wi-Fi), use the "Network" URL Vite prints. Printed QR codes then open on real phones too.
 
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | API (`:8787`) + web (`:5173`) with hot reload |
-| `pnpm start` | Production build, served by the API as one process on `:8787` |
+| `pnpm start` | Production-style build (demo included), served by the API as one process on `:8787` |
 | `pnpm db:reset` | Wipe and reseed demo data (also available in **Demo controls**) |
 | `pnpm typecheck` | Typecheck every package |
-| `pnpm db:generate` | Generate a migration after editing `apps/api/src/db/schema.ts` |
+| `pnpm db:generate` | Generate a migration after editing `apps/api/src/db/schema.ts` (written to `supabase/migrations`) |
+| `pnpm release` | Deploy production (requires hosting accounts; see below) |
 
 Requires Node 22+ and pnpm 10+.
 
@@ -40,14 +42,105 @@ Requires Node 22+ and pnpm 10+.
    *Demo controls → Paid plan* switches it off and on.
 7. **Growth loop:** *Scan & Share* shows your QR card; *Demo controls → A new singer joins via my QR* earns Scene Builder badges.
 
-**What changed, with before/after screenshots:** `/changes/` (source: `apps/web/public/changes/`). Add a round there for each feedback cycle; `scripts/changes/capture.mjs` captures the cropped, red-boxed screenshots.
+**What changed, with before/after screenshots:** http://localhost:5173/changes/ while `pnpm dev` is running (source: `apps/web/changes/`; development only, never deployed). Add a round there for every change; `scripts/changes/capture.mjs` captures the cropped, red-boxed screenshots.
 
 **Demo controls** (wrench icon) also include: switching to any of the ~120 accounts, teleporting, time travel, sending a crowd into a venue, and resetting the data.
+
+## Local demo vs. production
+
+The demo (persona sign-in, seeded Omaha scene, **Demo controls**, time travel, simulated GPS and QR scans,
+mock checkout) only exists locally:
+
+- **API:** everything demo lives in `apps/api/src/demo` and is mounted at `/api/demo` by the local host
+  (`src/hosts/node.ts`). The production host (`src/hosts/edge.ts`) never imports it, and the edge build fails
+  if demo code ends up in the bundle.
+- **Web:** everything demo lives in `apps/web/src/demo`, reached only through `src/lib/demo.ts` behind the
+  build-time `__DEMO__` flag (on for `vite` dev and `pnpm start`, off for real builds), so it's tree-shaken out.
+
+| | Local (`pnpm dev`) | Production (`pnpm release`) |
+| --- | --- | --- |
+| API host | Node (`src/hosts/node.ts`) | Supabase Edge Function `api` (`src/hosts/edge.ts`) |
+| Database | PGlite, or `DATABASE_URL` | Supabase Postgres (`app` schema, not exposed via the Data API) |
+| Sign-in | Demo personas (+ Supabase if configured) | Supabase Auth: email/password |
+| Realtime | In-process bus over SSE | Supabase Realtime (private broadcast channels) |
+| Media | `apps/api/data/media` | Supabase Storage (`media` bucket) |
+| Scheduled jobs | 60s timer | pg_cron (every 5 min) |
+| Push | off | Dormant; use in-app notifications + Realtime |
+| Web | Vite dev server | Cloudflare Workers Static Assets |
+
+To try real Supabase locally, see `apps/api/.env.example`.
+
+## Production setup
+
+[Deployment setup and operations](docs/deployment.md) covers the GitHub `production` environment,
+Cloudflare Worker, Supabase Auth, and the exact secrets and variables to configure.
+
+`.github/workflows/pipeline.yml` runs on pull requests and pushes to `main`:
+
+- **Verify:** typecheck, focused regressions, fresh Supabase migrations, real Auth/venue browser checks,
+  Edge Runtime smoke, production builds with demo exclusion, and a Workers deployment dry run.
+- **Deploy production:** after verification on `main`, build both production artifacts, apply migrations,
+  deploy the API, check its embedded commit and database access, deploy the frontend, then verify assets,
+  browser rendering and browser-to-API connectivity. PR checks never receive production credentials.
+
+A running main pipeline is not superseded. GitHub keeps only the newest pending run when several pushes queue.
+Use backward-compatible migrations: an older frontend/API may remain active during a release.
+There are no hosted PR previews or separate staging project yet.
+
+```bash
+pnpm release --check   # Validate settings and build; no remote writes
+pnpm release           # Same ordered release used by GitHub Actions
+node --test scripts/*.test.mjs
+```
+
+Local releases read ignored `.env.deploy`; GitHub uses environment secrets/variables.
+`--check` does not verify remote credentials, Auth provider settings or email delivery.
+The old Netlify configuration is removed; an existing Netlify site must be disabled in that account.
+
+### Verify against local Supabase
+
+The stack uses ports 55421 (API), 55422 (Postgres), 55423 (Studio), 55424 (Mailpit).
+`pnpm exec supabase start` requires Docker. The project's Auth config is for local development;
+production URLs and Confirm email OFF must be set separately before deployment.
+
+Run the API with `DEMO=off`, `DATABASE_URL` pointing at local Supabase, `DATABASE_MIGRATE=off`
+(if the CLI applied migrations), `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
+Run Vite with `VITE_DEMO=false`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `API_URL` pointing at that API.
+Use separate ports from the demo (8791 / 5174). `pnpm exec supabase status` gives the local settings.
+
+Existing browser checks (Chrome required; default web port 5174):
+
+```bash
+node scripts/e2e/real-auth.mjs
+node scripts/e2e/real-venues.mjs
+```
+
+Verify the actual Edge Runtime too (it uses Kong internally, so the local public JWT issuer is explicit):
+
+```bash
+# Create a local ignored env file containing AUTH_JWT_ISSUER=http://127.0.0.1:55421/auth/v1
+pnpm exec supabase functions serve api --no-verify-jwt --env-file /path/to/local-edge.env
+# In another terminal:
+node scripts/e2e/edge-smoke.mjs
+```
+
+Keep `AUTH_JWT_ISSUER` unset in hosted production; there the default Supabase URL matches the token issuer.
+The smoke check validates real password authentication, onboarding, and absence of demo endpoints through the Edge URL.
+
+Focused persistence regressions (fresh in-memory database, no Docker required):
+
+```bash
+cd apps/api
+node --import tsx scripts/check-phase2.ts
+```
+
+These check account-claim overlaps, concurrent venue setup, reminder deduplication, and job delivery.
+PGlite serializes transactions; real Postgres is still needed to verify multi-connection races.
 
 ## Architecture
 
 ```
-apps/api          Hono REST API (TypeScript), Drizzle ORM, SQLite via libSQL
+apps/api          Hono REST API (TypeScript), Drizzle ORM, Postgres
 apps/web          React 19 PWA: Vite, TanStack Router + Query, Tailwind v4, MapLibre, Motion
 packages/api-client  Typed client generated from the API's routes (Hono RPC). A future Expo/React Native app imports this as-is.
 ```
@@ -61,35 +154,38 @@ packages/api-client  Typed client generated from the API's routes (Hono RPC). A 
 | `live` | Song submissions (singer sends, KJ accepts), KJ booth, singer's "My Night" |
 | `venues` | Schedules, events, drink specials, RSVPs ("who's going"), gallery, venue settings, KJ-listed venues and claims |
 | `wallet` | Venue coupons: awarded by venues, redeemed once by scanning the singer's QR |
-| `media` | Photo and menu uploads (disk locally, Netlify Blobs when hosted) |
-| `profiles` | Identity, demo sign-in, privacy-filtered profile views, Ghost Mode |
+| `profiles` | Supabase identity, role onboarding, privacy-filtered profile views, Ghost Mode |
 | `social` | Friends, favorites, blocks, positive-only praise |
 | `reputation` | Badge catalog and award rules (KJ→singer, venue→KJ, growth badges) |
 | `songs` | Catalog, personal song lists, roulette, recommendations, KJ songbooks + CSV import |
 | `qr` | QR scan handling and the referral growth loop |
-| `promo` | Auto-posting (mocked), Auto Promote, Message Blast, special auto-posts, paid plans (mocked checkout) |
-| `notifications` | In-app notifications (polled; swap for push/websockets later) |
-| `debug` | Demo controls: reset, clock, crowds, referrals |
+| `promo` | Share reminders, Auto Promote, Message Blast; users share through native share, Facebook links, SMS or clipboard |
+| `media` | Photo and menu uploads (Supabase Storage; disk locally) |
+| `wallet` | Venue coupons: awarded by venues, redeemed once by scanning the singer's QR |
+| `notifications` | In-app notifications, Realtime nudges and FCM push |
 
-All "now" logic goes through `lib/clock.ts`, which is how the demo time-travels.
+All "now" logic goes through `lib/clock.ts`, which is how the demo time-travels (the offset is always 0 in production).
+Platform adapters (`lib/realtime.ts`, `lib/storage.ts`, `lib/push.ts`) are chosen by the host, so modules don't know where they run.
 
-### Real vs. mocked
+### Real vs. not built yet
 
-**Real, stored in SQLite:** accounts, profiles, privacy, check-ins, KJ sessions, song submissions, badges, praise, friends/blocks/favorites,
-events, specials, RSVPs, songbooks, song lists, coupons, notifications, promo posts. Uploaded photos and menus are real files.
+**Real:** accounts and sign-in (Supabase Auth), profiles, privacy, check-ins, KJ sessions, song submissions, badges, praise,
+friends/blocks/favorites, events, specials, RSVPs, songbooks, song lists, coupons, notifications (Realtime + FCM push),
+photo and menu uploads (Storage), promo post scheduling, GPS.
 
-**Mocked:**
-- Email sign-in and verification: the screens are real, but no email is sent and you land in the role's demo persona.
-  Bearer-token sessions already exist, so real auth only changes how tokens get issued.
-- Posting to Facebook/Instagram.
-- Payments (Singer Plus, KJ Pro, Venue Premier): plans unlock instantly in the demo.
-- Venue claim verification (claiming signs you in as the venue).
-- Seeded gallery photos are generated art (new uploads are real).
-- Push notifications (polled every ~6s).
-- GPS (simulated by default; real GPS can be toggled on).
+**Not built yet** (production shows "coming soon"; the local demo mocks them):
+- Payments (Singer Plus, KJ Pro, Venue Premier).
+- Automated publishing to Facebook/Instagram (replaced with manual sharing).
+
+**Real onboarding:** role selection → email/password signup → profile. Venue owners can add their own
+venue or claim an unclaimed KJ listing, with an ownership declaration. Claims preserve the listing’s reputation
+and notify its listing KJ. This is self-serve; ownership is not independently verified.
+
+**Promotion:** sharing works without paid plans. Paid Auto Promote queues a reminder for the next show when
+the KJ opens Booth/My Venues; it refreshes on later visits. Special reminders cover the next seven days.
+Scheduled jobs deliver each due reminder once, with a link back to its share page; they do not publish to social networks.
 
 ### Hosting flexibility
 
-- The API is `app.fetch` from Hono, so it runs on Node (current), Bun, Deno, Cloudflare Workers, AWS Lambda, Fly, Render, etc.
-- Set `DATABASE_URL=libsql://…` + `DATABASE_AUTH_TOKEN` to use Turso instead of the local file. Moving to Postgres means swapping Drizzle's dialect.
+- The API is `app.fetch` from Hono; `src/hosts/*` adapt it to Node and Supabase Edge Functions (Deno). Another host is one small file.
 - `VITE_API_URL` points the web app (or a mobile app) at a remote API. `SCENE_TZ` sets the scene timezone (default `America/Chicago`).

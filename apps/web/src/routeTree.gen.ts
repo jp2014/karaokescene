@@ -22,6 +22,7 @@ import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SongsRouteImport } from './routes/songs'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as SharePostIdRouteImport } from './routes/share.$postId'
 import { Route as UHandleRouteImport } from './routes/u.$handle'
 import { Route as VenuesSlugRouteImport } from './routes/venues.$slug'
 import { Route as QKindKeyRouteImport } from './routes/q.$kind.$key'
@@ -91,6 +92,11 @@ const WelcomeRoute = WelcomeRouteImport.update({
   path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SharePostIdRoute = SharePostIdRouteImport.update({
+  id: '/share/$postId',
+  path: '/share/$postId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UHandleRoute = UHandleRouteImport.update({
   id: '/u/$handle',
   path: '/u/$handle',
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/songs': typeof SongsRoute
   '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
+  '/share/$postId': typeof SharePostIdRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
   '/q/$kind/$key': typeof QKindKeyRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/songs': typeof SongsRoute
   '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
+  '/share/$postId': typeof SharePostIdRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
   '/q/$kind/$key': typeof QKindKeyRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/songs': typeof SongsRoute
   '/wallet': typeof WalletRoute
   '/welcome': typeof WelcomeRoute
+  '/share/$postId': typeof SharePostIdRoute
   '/u/$handle': typeof UHandleRoute
   '/venues/$slug': typeof VenuesSlugRoute
   '/q/$kind/$key': typeof QKindKeyRoute
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/songs'
     | '/wallet'
     | '/welcome'
+    | '/share/$postId'
     | '/u/$handle'
     | '/venues/$slug'
     | '/q/$kind/$key'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/songs'
     | '/wallet'
     | '/welcome'
+    | '/share/$postId'
     | '/u/$handle'
     | '/venues/$slug'
     | '/q/$kind/$key'
@@ -214,6 +225,7 @@ export interface FileRouteTypes {
     | '/songs'
     | '/wallet'
     | '/welcome'
+    | '/share/$postId'
     | '/u/$handle'
     | '/venues/$slug'
     | '/q/$kind/$key'
@@ -233,6 +245,7 @@ export interface RootRouteChildren {
   SongsRoute: typeof SongsRoute
   WalletRoute: typeof WalletRoute
   WelcomeRoute: typeof WelcomeRoute
+  SharePostIdRoute: typeof SharePostIdRoute
   UHandleRoute: typeof UHandleRoute
   VenuesSlugRoute: typeof VenuesSlugRoute
   QKindKeyRoute: typeof QKindKeyRoute
@@ -331,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/share/$postId': {
+      id: '/share/$postId'
+      path: '/share/$postId'
+      fullPath: '/share/$postId'
+      preLoaderRoute: typeof SharePostIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/u/$handle': {
       id: '/u/$handle'
       path: '/u/$handle'
@@ -369,6 +389,7 @@ const rootRouteChildren: RootRouteChildren = {
   SongsRoute: SongsRoute,
   WalletRoute: WalletRoute,
   WelcomeRoute: WelcomeRoute,
+  SharePostIdRoute: SharePostIdRoute,
   UHandleRoute: UHandleRoute,
   VenuesSlugRoute: VenuesSlugRoute,
   QKindKeyRoute: QKindKeyRoute,

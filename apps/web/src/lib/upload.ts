@@ -1,4 +1,5 @@
-import { ApiError, baseUrl, tokenStore } from './api';
+import { ApiError, apiBaseUrl } from './api';
+import { auth } from './auth';
 
 const MAX_SIDE = 1600;
 
@@ -19,8 +20,8 @@ export async function uploadFile(file: File): Promise<string> {
   const body = isPhoto ? await shrink(file) : file;
   const form = new FormData();
   form.append('file', body, isPhoto ? 'photo.jpg' : file.name);
-  const token = tokenStore.get();
-  const res = await fetch(`${baseUrl}/media`, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
+  const token = auth.token();
+  const res = await fetch(`${apiBaseUrl}/media`, { method: 'POST', body: form, headers: token ? { authorization: `Bearer ${token}` } : {} });
   const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
   if (!res.ok || !json.url) throw new ApiError(res.status, json.error ?? 'Upload failed');
   return json.url;

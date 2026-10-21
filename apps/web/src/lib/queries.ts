@@ -1,9 +1,14 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, tokenStore, unwrap } from './api';
+import { api, unwrap } from './api';
+import { auth } from './auth';
 
-/** Query keys in one place so invalidation stays consistent. */
+/**
+ * Query keys in one place so invalidation stays consistent. Live data (booth, my night,
+ * notifications, venue crowds) is refreshed by Realtime signals, not polling: see useRealtimeSync.
+ */
 export const qk = {
+  session: ['session'] as const,
   me: ['me'] as const,
   venues: (f: object) => ['venues', f] as const,
   venue: (slug: string) => ['venue', slug] as const,
@@ -15,19 +20,21 @@ export const qk = {
   notifications: ['notifications'] as const,
   praise: ['praise'] as const,
   events: ['events'] as const,
-  clock: ['clock'] as const,
-  accounts: ['accounts'] as const,
   wallet: ['wallet'] as const,
   myVenues: ['my-venues'] as const,
   regulars: ['regulars'] as const,
 };
 
-const signedIn = () => !!tokenStore.get();
+const signedIn = () => auth.signedIn();
 
 export const useMe = () =>
   useQuery({ queryKey: qk.me, queryFn: () => unwrap(api.profiles.me.$get()), enabled: signedIn(), retry: false, staleTime: 10_000 });
 
 export type Me = NonNullable<ReturnType<typeof useMe>['data']>;
+
+/** Signed out, signed in but not onboarded (no role yet), or ready. */
+export const sessionQuery = { queryKey: qk.session, queryFn: () => unwrap(api.profiles.session.$get()), staleTime: 60_000 };
+export const useSession = () => useQuery({ ...sessionQuery, enabled: signedIn() });
 
 export type VenueFilters = {
   lat?: number;
@@ -49,13 +56,12 @@ export const useVenues = (f: VenueFilters) =>
           query: Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined && v !== false).map(([k, v]) => [k, String(v)])),
         }),
       ),
-    refetchInterval: 20_000,
     placeholderData: keepPreviousData,
   });
 export type VenueSummary = NonNullable<ReturnType<typeof useVenues>['data']>['venues'][number];
 
 export const useVenue = (slug: string) =>
-  useQuery({ queryKey: qk.venue(slug), queryFn: () => unwrap(api.discover.venues[':slug'].$get({ param: { slug } })), refetchInterval: 15_000 });
+  useQuery({ queryKey: qk.venue(slug), queryFn: () => unwrap(api.discover.venues[':slug'].$get({ param: { slug } })) });
 export type VenueDetail = NonNullable<ReturnType<typeof useVenue>['data']>;
 
 export const useProfile = (handle: string) =>
@@ -68,10 +74,10 @@ export const useMySongs = (kjId?: string) =>
   useQuery({ queryKey: [...qk.mySongs, kjId ?? null], queryFn: () => unwrap(api.songs.mine.$get({ query: kjId ? { kjId } : {} })), enabled: signedIn() });
 export type ListSong = NonNullable<ReturnType<typeof useMySongs>['data']>[number];
 
-export const useBooth = () => useQuery({ queryKey: qk.booth, queryFn: () => unwrap(api.live.booth.$get()), refetchInterval: 5_000 });
+export const useBooth = () => useQuery({ queryKey: qk.booth, queryFn: () => unwrap(api.live.booth.$get()) });
 export type Booth = NonNullable<ReturnType<typeof useBooth>['data']>;
 export const useMyLive = (enabled = true) =>
-  useQuery({ queryKey: qk.myLive, queryFn: () => unwrap(api.live.mine.$get()), refetchInterval: 5_000, enabled: enabled && signedIn() });
+  useQuery({ queryKey: qk.myLive, queryFn: () => unwrap(api.live.mine.$get()), enabled: enabled && signedIn() });
 
 export const useWallet = () => useQuery({ queryKey: qk.wallet, queryFn: () => unwrap(api.wallet.$get()), enabled: signedIn() });
 export type Coupon = NonNullable<ReturnType<typeof useWallet>['data']>[number];
@@ -80,12 +86,11 @@ export type MyVenue = NonNullable<ReturnType<typeof useMyVenues>['data']>[number
 export const useRegulars = () => useQuery({ queryKey: qk.regulars, queryFn: () => unwrap(api.presence.regulars.$get()), enabled: signedIn() });
 
 export const useNotifications = () =>
-  useQuery({ queryKey: qk.notifications, queryFn: () => unwrap(api.notifications.$get()), refetchInterval: 6_000, enabled: signedIn() });
+  // Scheduled database jobs do not emit API broadcasts. Refresh while visible as a fallback.
+  useQuery({ queryKey: qk.notifications, queryFn: () => unwrap(api.notifications.$get()), enabled: signedIn(), refetchInterval: 60_000 });
 
 export const usePraiseFeed = () => useQuery({ queryKey: qk.praise, queryFn: () => unwrap(api.social.praise.$get()), refetchInterval: 20_000 });
 export const useEvents = () => useQuery({ queryKey: qk.events, queryFn: () => unwrap(api.venues.events.$get()) });
-export const useClock = () => useQuery({ queryKey: qk.clock, queryFn: () => unwrap(api.debug.clock.$get()), refetchInterval: 30_000 });
-export const useDemoAccounts = () => useQuery({ queryKey: qk.accounts, queryFn: () => unwrap(api.auth['demo-accounts'].$get()) });
 
 /**
  * A mutation with the app's standard UX: success toast, error toast, then

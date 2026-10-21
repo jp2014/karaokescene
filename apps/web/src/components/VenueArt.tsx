@@ -23,15 +23,17 @@ export function VenueArt({ name, hue, className, big, photoUrl }: { name: string
   );
 }
 
-/** Gallery tile: an uploaded photo, or generated art for the seeded demo gallery. */
-export function GalleryTile({ hue, emoji, caption, kind, featured, imageUrl, className }: { hue: number; emoji: string; caption: string; kind: string; featured?: boolean; imageUrl?: string | null; className?: string }) {
+/** A gallery photo/video from object storage, or generated art (hue + emoji) when there's no file. */
+export function GalleryTile({ hue, emoji, caption, kind, featured, mediaUrl, className }: { hue: number; emoji: string; caption: string; kind: string; featured?: boolean; mediaUrl?: string | null; className?: string }) {
   return (
     <div
       className={cx('group relative aspect-square overflow-hidden rounded-2xl', className)}
       style={{ background: `linear-gradient(160deg, hsl(${hue} 70% 35%), hsl(${(hue + 50) % 360} 70% 14%))` }}
     >
-      {imageUrl ? (
-        <img src={imageUrl} alt={caption} className="absolute inset-0 size-full object-cover transition group-hover:scale-105" />
+      {mediaUrl && kind === 'video' ? (
+        <video src={mediaUrl} className="absolute inset-0 size-full object-cover" muted playsInline loop autoPlay />
+      ) : mediaUrl ? (
+        <img src={mediaUrl} alt={caption} loading="lazy" className="absolute inset-0 size-full object-cover transition group-hover:scale-105" />
       ) : (
         <div className="absolute inset-0 grid place-items-center text-5xl transition group-hover:scale-110">{emoji}</div>
       )}

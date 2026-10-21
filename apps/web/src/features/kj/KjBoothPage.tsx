@@ -8,7 +8,7 @@ import { PremiumGate, PremiumPill } from '~/components/Premium';
 import { Button, Card, cx, EmptyState, LiveDot, PageLoader, Section, Stat } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
 import { AwardBadgeSheet, PraiseSheet } from '~/features/profile/ProfileActions';
-import { AutoPostCard } from '~/features/promo/AutoPostCard';
+import { PromoteCard } from '~/features/promo/PromoteCard';
 import { api, unwrap } from '~/lib/api';
 import { ago, duration, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useBooth, type Booth } from '~/lib/queries';
@@ -43,6 +43,7 @@ function StartShow({ b }: { b: Booth }) {
           </Link>
         }
       >
+        {!b.venues.length && <EmptyState icon="🎤" title="Add your first venue" body="List where you host and set your hours. Then you can go live and take song submissions." action={<Link to="/my-venues" className="text-sm font-semibold text-brand">Add a venue →</Link>} />}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {b.venues.map((v) => (
             <Card key={v.id} className="overflow-hidden">
@@ -62,7 +63,7 @@ function StartShow({ b }: { b: Booth }) {
       </Section>
       <div className="grid gap-6 lg:grid-cols-2">
         <SongbookCard />
-        <AutoPostCard venues={b.venues} />
+        <PromoteCard venues={b.venues} />
       </div>
     </div>
   );
@@ -226,13 +227,13 @@ function LiveBooth({ b }: { b: LiveBoothData }) {
           </Section>
           <MessageBlastCard />
           <SongbookCard compact />
-          <AutoPostCard venues={b.venues} defaultVenueId={b.venue.id} />
+          <PromoteCard venues={[b.venue, ...b.venues.filter((x) => x.id !== b.venue.id)]} />
         </div>
       </div>
       {awardTo && <AwardBadgeSheet open onClose={() => setAwardTo(null)} to={awardTo} />}
       {praiseTo && <PraiseSheet open onClose={() => setPraiseTo(null)} to={praiseTo} venueId={b.venue.id} />}
       <p className="text-center text-xs text-faint">
-        <BookOpen className="mr-1 inline size-3.5" /> Tip: open another tab as a singer at {b.venue.name} and send a song. It shows up here within seconds.
+        <BookOpen className="mr-1 inline size-3.5" /> Tip: singers checked in at {b.venue.name} can send songs from My Night. Submissions appear here within seconds.
       </p>
     </div>
   );

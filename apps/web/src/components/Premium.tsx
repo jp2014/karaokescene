@@ -1,7 +1,7 @@
-import { Check, Crown, Lock, Sparkles } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
-import { api, unwrap } from '~/lib/api';
-import { qk, useAction, useMe } from '~/lib/queries';
+import { Check, Crown, Lock } from 'lucide-react';
+import { Suspense, useState, type ReactNode } from 'react';
+import { DemoPlanSwitch } from '~/lib/demo';
+import { useMe } from '~/lib/queries';
 import { Button, cx, Pill, Sheet } from './ui';
 
 type Role = 'singer' | 'kj' | 'venue';
@@ -9,8 +9,8 @@ type Role = 'singer' | 'kj' | 'venue';
 /** The paid plan for each account type, and what it unlocks. */
 export const PLANS: Record<Role, { name: string; price: string; features: string[] }> = {
   singer: { name: 'Singer Plus', price: '$2.99/mo', features: ['Smart song recommendations', 'Venue coupons from your regular spots'] },
-  kj: { name: 'KJ Pro', price: '$9/mo', features: ['Auto social posting to Facebook & Instagram', 'Auto Leave alerts when singers walk out', 'Message Blast to your singers'] },
-  venue: { name: 'Venue Premier', price: '$49/mo', features: ['Premier listing: priority on the map and a gold pin', "Show who's going on your page", 'Peak Hours insights', 'Drink Special Auto Post'] },
+  kj: { name: 'KJ Pro', price: '$9/mo', features: ['Auto Promote: a reminder to share each of your nights', 'Auto Leave alerts when singers walk out', 'Message Blast to your singers'] },
+  venue: { name: 'Venue Premier', price: '$49/mo', features: ['Premier listing: priority on the map and a gold pin', "Show who's going on your page", 'Peak Hours insights', 'Reminders to share your drink specials'] },
 };
 
 export function PremiumPill({ role }: { role: Role }) {
@@ -21,14 +21,9 @@ export function PremiumPill({ role }: { role: Role }) {
   );
 }
 
-/** Upgrade sheet. Payments aren't live yet, so the demo can unlock (and re-lock) any plan. */
+/** Upgrade sheet. Payments aren't live yet: production says "coming soon"; the local demo can unlock (and re-lock) any plan. */
 export function UpgradeSheet({ open, onClose, feature }: { open: boolean; onClose: () => void; feature?: string }) {
   const { data: me } = useMe();
-  const set = useAction((on: boolean) => unwrap(api.promo.upgrade.$post({ json: { on } })), {
-    invalidate: [qk.me, qk.booth, ['venue'], ['venues'], ['recs']],
-    success: (_, on) => (on ? `${me ? PLANS[me.role].name : 'Premium'} unlocked for this demo ✨` : 'Back on the free plan'),
-    onSuccess: onClose,
-  });
   if (!me) return null;
   const plan = PLANS[me.role];
   return (
@@ -44,15 +39,15 @@ export function UpgradeSheet({ open, onClose, feature }: { open: boolean; onClos
           ))}
         </ul>
       </div>
-      <p className="mt-4 text-xs text-faint">Payments are coming soon. For this demo you can switch the plan on and off freely.</p>
-      {me.isPremium ? (
-        <Button className="mt-3 w-full" loading={set.isPending} onClick={() => set.mutate(false)}>
-          Switch back to free (demo)
-        </Button>
+      {DemoPlanSwitch ? (
+        <Suspense>
+          <DemoPlanSwitch onDone={onClose} />
+        </Suspense>
       ) : (
-        <Button variant="primary" className="mt-3 w-full" loading={set.isPending} onClick={() => set.mutate(true)}>
-          <Sparkles className="size-4" /> Unlock for this demo
-        </Button>
+        <div className="mt-4 text-center">
+          <Pill tone="gold">Coming soon</Pill>
+          <p className="mt-2 text-xs text-faint">Paid plans aren't available yet. We'll let you know when they are.</p>
+        </div>
       )}
     </Sheet>
   );

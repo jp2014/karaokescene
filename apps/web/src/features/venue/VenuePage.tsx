@@ -1,12 +1,10 @@
-import { Link, useNavigate, useParams, useRouter } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { Link, useParams, useRouter } from '@tanstack/react-router';
 import { ArrowLeft, Award, BadgeCheck, CalendarDays, Camera, Check, Clock, FileText, Heart, LogOut, MapPin, Martini, QrCode, Settings2, Share2, Star, Trophy, Users, UtensilsCrossed } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Avatar, AvatarStack } from '~/components/Avatar';
 import { BadgeGrid, BadgeMedal } from '~/components/Badge';
 import { FilePicker } from '~/components/FilePicker';
 import { AwardBadgeSheet } from '~/features/profile/ProfileActions';
-import { tokenStore } from '~/lib/api';
 import { BusyMeter } from '~/components/BusyMeter';
 import { QrCard, qrUrl } from '~/components/QrCard';
 import { ShareSheet } from '~/components/ShareSheet';
@@ -15,6 +13,8 @@ import { GalleryTile, VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
 import { ago, DAYS, DAYS_LONG, dateLabel, duration, hoursLabel, SCENE_TZ, serverNow, timeLabel } from '~/lib/format';
 import { qk, useAction, useMe, useVenue, type VenueDetail } from '~/lib/queries';
+import { useLiveQueries } from '~/lib/realtime';
+import { DemoClaimSheet } from '~/lib/demo';
 import { PeakHours } from './PeakHours';
 
 const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scene: 'cyan' } as const;
@@ -22,6 +22,7 @@ const EVENT_TONE = { karaoke: 'violet', competition: 'gold', theme: 'pink', scen
 export function VenuePage() {
   const { slug } = useParams({ from: '/venues/$slug' });
   const { data: d, isLoading } = useVenue(slug);
+  useLiveQueries(d ? `venue:${d.venue.id}` : null, [qk.venue(slug)]);
   const { data: me } = useMe();
   const router = useRouter();
   const [share, setShare] = useState(false);
@@ -336,14 +337,14 @@ function Gallery({ d }: { d: VenueDetail }) {
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState('');
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, json: { caption: caption || 'Great night!', kind: 'photo', emoji: '📸', imageUrl: imageUrl! } })), {
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const add = useAction(() => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: d.venue.id }, json: { caption: caption || 'Great night!', mediaUrl: mediaUrl! } })), {
     invalidate: [qk.venue(d.venue.slug)],
     success: 'Posted to the gallery',
     onSuccess: () => {
       setOpen(false);
       setCaption('');
-      setImageUrl(null);
+      setMediaUrl(null);
     },
   });
   return (
@@ -367,16 +368,16 @@ function Gallery({ d }: { d: VenueDetail }) {
       <Sheet open={open} onClose={() => setOpen(false)} title="Add to the gallery">
         <div className="space-y-4">
           <div className="relative grid aspect-video place-items-center overflow-hidden rounded-2xl border border-dashed border-line-strong bg-surface-2/50 text-center text-sm text-muted">
-            {imageUrl ? (
-              <img src={imageUrl} alt="" className="absolute inset-0 size-full object-cover" />
+            {mediaUrl ? (
+              <img src={mediaUrl} alt="" className="absolute inset-0 size-full object-cover" />
             ) : (
-              <FilePicker variant="primary" capture="environment" onUploaded={setImageUrl}>
+              <FilePicker variant="primary" capture="environment" onUploaded={setMediaUrl}>
                 <Camera className="size-4" /> Take or choose a photo
               </FilePicker>
             )}
           </div>
           <input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Caption (e.g. Bohemian Rhapsody group sing)" className="w-full" />
-          <Button variant="primary" className="w-full" disabled={!imageUrl} loading={add.isPending} onClick={() => add.mutate(undefined)}>
+          <Button variant="primary" className="w-full" disabled={!mediaUrl} loading={add.isPending} onClick={() => add.mutate(undefined)}>
             Post
           </Button>
         </div>
@@ -462,16 +463,6 @@ function Ratings({ d }: { d: VenueDetail }) {
 function ClaimBanner({ d }: { d: VenueDetail }) {
   const { data: me } = useMe();
   const [open, setOpen] = useState(false);
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const claim = useAction(() => unwrap(api.venues[':venueId'].claim.$post({ param: { venueId: d.venue.id } })), {
-    success: (r) => `You now manage ${r.user.displayName} 🎉`,
-    onSuccess: (r) => {
-      tokenStore.set(r.token);
-      qc.clear();
-      navigate({ to: '/me' });
-    },
-  });
   return (
     <>
       <Card className="mb-5 flex flex-wrap items-center gap-3 border-gold/40 bg-gold/5 p-4">
@@ -480,26 +471,17 @@ function ClaimBanner({ d }: { d: VenueDetail }) {
           <div className="font-semibold">Unclaimed venue</div>
           <div className="text-muted">Listed by {d.venue.createdBy?.displayName ?? 'a KJ'} who hosts karaoke here. Own or run {d.venue.name}?</div>
         </div>
-        {me?.id !== d.venue.createdBy?.id && (
+        {DemoClaimSheet && me?.id !== d.venue.createdBy?.id && (
           <Button size="sm" variant="primary" onClick={() => setOpen(true)}>
             Claim this venue
           </Button>
         )}
       </Card>
-      <Sheet open={open} onClose={() => setOpen(false)} title={`Claim ${d.venue.name}`}>
-        <div className="space-y-4 text-sm">
-          <p className="text-muted">Claiming lets you add photos, hours, specials and coupons, and choose your KJs. The KJ's nights stay on the schedule.</p>
-          <ol className="list-decimal space-y-1.5 pl-5 text-muted">
-            <li>Sign in with your business email.</li>
-            <li>Confirm you're the owner or an authorized operator.</li>
-            <li>We verify with a quick call to the venue's listed phone number.</li>
-          </ol>
-          <div className="rounded-2xl border border-dashed border-gold/40 bg-gold/5 p-3 text-xs text-gold">Demo: verification is skipped. Claiming signs you in as this venue's account.</div>
-          <Button variant="primary" className="w-full" loading={claim.isPending} onClick={() => claim.mutate(undefined)}>
-            I'm the owner · claim {d.venue.name}
-          </Button>
-        </div>
-      </Sheet>
+      {DemoClaimSheet && open && (
+        <Suspense>
+          <DemoClaimSheet venue={d.venue} open onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 }

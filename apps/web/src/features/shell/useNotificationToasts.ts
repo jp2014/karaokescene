@@ -5,7 +5,7 @@ import { useNotifications } from '~/lib/queries';
 
 const ICON: Record<string, string> = { 'auto-leave': '🚪', 'check-in': '📍', badge: '🏅', praise: '💖', 'friend-request': '👋', 'friend-accepted': '🤝', 'song-request': '🎵', 'up-next': '🎤', 'kj-now': '🎧', 'qr-scan': '📲' };
 
-/** Pops a toast for notifications that arrive while the app is open (polling stands in for push). */
+/** Pops a toast for notifications that arrive while the app is open (Realtime tells us when to refetch). */
 export function useNotificationToasts() {
   const { data } = useNotifications();
   const seen = useRef<Set<string> | null>(null);

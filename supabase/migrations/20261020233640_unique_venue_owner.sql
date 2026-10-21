@@ -1,0 +1,1 @@
+ALTER TABLE "app"."venues" ADD CONSTRAINT "venues_owner_id_unique" UNIQUE("owner_id");

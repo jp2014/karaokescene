@@ -1,0 +1,152 @@
+# Deployment
+
+One GitHub Actions workflow owns the release order for Supabase and Cloudflare Workers Static Assets.
+Do not enable a separate Cloudflare Git build or Supabase Git deployment for this repository.
+The pipeline is ready in source; production accounts and credentials must be configured before its first release.
+
+## One-time setup
+
+1. Create the production Supabase project in US East. Keep `app` out of the Data API's exposed schemas.
+2. Create a Cloudflare account and select a Workers subdomain. You can create a `karaokescene` Hello World
+   Worker to establish the URL; our first deployment replaces it. The CLI can also create the Worker.
+3. In GitHub, open **Settings → Environments → New environment**, name it **production**, and allow
+   deployments from `main` only. Configure the settings below. No additional approval gate is required.
+4. Under **Settings → Rules → Rulesets** (or branch protection), require a pull request and the
+   **Verify** check before merging into `main`. The workflow runs only after it is pushed to GitHub.
+5. Merge the pipeline and application changes into `main`. A successful verification triggers production
+   automatically. **Actions → Pipeline → Run workflow** on `main` can retry a release.
+
+### GitHub production secrets
+
+| Name | Value |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | Supabase CLI deployment access token |
+| `SUPABASE_DB_PASSWORD` | Production project's database password |
+| `CLOUDFLARE_API_TOKEN` | Token with Workers Scripts edit permission, scoped to the production account |
+
+### GitHub production variables
+
+| Name | Value |
+| --- | --- |
+| `SUPABASE_PROJECT_REF` | 20-letter Supabase project reference |
+| `SUPABASE_ANON_KEY` | Public publishable key, or legacy `anon` key |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_WORKER_NAME` | `karaokescene`, or your chosen Worker name |
+| `SITE_URL` | Exact HTTPS origin, such as `https://karaokescene.your-subdomain.workers.dev` |
+
+The service-role key is injected into Supabase Edge Runtime by Supabase. It is not a frontend setting.
+The release config rejects secret/service-role keys in `SUPABASE_ANON_KEY`.
+For a custom domain, configure it on the Worker separately; changing `SITE_URL` alone does not attach DNS.
+
+### Supabase Auth
+
+Configure in the production dashboard:
+
+- Keep the Email provider and new-user signup enabled; turn **Confirm email OFF**.
+- Set the minimum password length to 8 characters (the frontend requires at least 8 for new accounts).
+- Site URL: the exact `SITE_URL`.
+- Leave Google disabled for now. The app offers email/password only.
+
+Routine signup and sign-in do not send email. Custom templates and SMTP are not needed for this setup.
+Password recovery is not implemented in the app yet. Accounts previously created through OTP have no
+password until one is set through a recovery/admin process; creating the same account again does not
+set its password. Use a new email for the first password signup if you have only disposable test accounts.
+
+Do not run `supabase config push` against production using this repository's local URLs.
+Keep `AUTH_JWT_ISSUER` unset in production; the override is for local Docker verification only.
+Remote dashboard Auth configuration is not changed by routine releases.
+The release checks public Auth settings and stops before publishing the frontend if email/signup,
+Confirm email, or Google differs from this launch configuration. Password length remains a dashboard check.
+
+## Pull request verification
+
+The `Verify` job has no production secrets. It installs tools pinned by the lockfile, runs TypeScript and
+focused regression checks, builds the Edge Function, then starts a fresh local Supabase stack on the
+GitHub runner. This applies every migration, including Storage, Realtime and pg_cron setup.
+It builds the real frontend against that stack and exercises real email/password signup and sign-in, all roles, owner creation,
+venue claims, and authenticated Edge database access. It finishes with a Workers deployment dry run.
+The temporary stack is stopped and discarded even when verification fails.
+
+## Production release
+
+Only verified `main` commits reach the `production` job. Both artifacts build before remote mutation:
+
+1. Push pending Supabase migrations. Never reset the production database or run demo seeds.
+2. Configure the API's site origin/timezone and deploy the bundled Edge Function.
+3. Verify its **compiled-in** Git SHA, CORS, database-backed discovery and required Auth settings.
+4. Upload the frontend to Workers Static Assets with SPA routing and no server-side Worker script.
+5. Check frontend release metadata, root/client routes and referenced JS/CSS, then run a read-only
+   browser check that renders the app, opens the email form and reads discovery through the real API.
+
+Each failed step stops subsequent steps. The running main pipeline cannot be automatically superseded;
+GitHub replaces older pending runs with the newest pending commit. PR checks can be canceled by a newer push.
+Successful releases record commit and URLs in the Actions summary. Built API/frontend artifacts are retained
+for 14 days, including when deployment fails after building. There is no automatic database rollback.
+
+## Failures and rollback
+
+- A migration or API failure leaves the previous frontend deployed. Fix the issue and rerun the release.
+- A frontend smoke failure marks the release failed; the new frontend may already be live.
+- Prefer reverting the faulty application commit and releasing again. Correct schema defects with a new
+  forward migration. A reverted commit must retain already-applied migrations in the repository.
+- Keep migrations compatible with both the old and new application. Add columns first; remove obsolete
+  columns only in a later release after old code no longer uses them. Old browser tabs can outlive a deploy.
+
+## Local commands
+
+`pnpm release --check` builds without deploying, using `.env.deploy` (copy `.env.deploy.example`).
+`pnpm release` uses the same ordered release as CI; local CLI logins may substitute for access tokens.
+CLI versions are pinned in `package.json` and the lockfile.
+
+For a CI-style local verification, start a **disposable** Supabase stack with `pnpm exec supabase start`,
+build the Edge bundle, then run `node scripts/ci/verify-local.mjs`. It creates local test users/venues but
+never resets an existing database. Default browser is Chrome; CI sets `PLAYWRIGHT_CHANNEL=chromium` and
+installs the matching browser with `pnpm exec playwright-core install --with-deps chromium`.
+
+References: [Supabase CI deployment](https://supabase.com/docs/guides/deployment/managing-environments),
+[Cloudflare SPA hosting](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
+
+## Disputed venue claims
+
+Claims are self-serve: the authorization checkbox is an attestation, not proof of ownership. The
+listing KJ is notified. Investigate reports before changing ownership; preserve the venue/placeholder
+user IDs so schedules, visits and venue history remain attached. A claim merges the claimant's old
+profile into that placeholder; this procedure releases ownership, it cannot reconstruct that old profile.
+
+For a confirmed impersonation, an administrator must:
+
+1. Record the venue ID, placeholder owner ID and current `auth_id`, plus relevant claim notifications.
+   Export the affected records and investigate changes to coupons, specials, schedules and profile fields.
+2. Ban/delete the impersonating **Supabase Auth** account and revoke its refresh sessions. Existing
+   access JWTs remain valid until expiry when verified locally. Keep the claim locked until the project's
+   maximum access-token lifetime has elapsed after revocation; do not just clear `auth_id` immediately.
+   During an urgent incident, restrict API access at the platform while tokens expire.
+3. After that interval, use the SQL editor transaction below with the investigated IDs. It checks that
+   the listing still belongs to that account. Retain all listing relationships and manually repair any
+   unauthorized content from the audit/export; financial or coupon actions need separate investigation.
+   Review notifications, friendships, favorites and praise as well as content, especially changes since
+   `claimed_at`. The claim also carries over the claimant's earlier personal records, so inspect those
+   too; the merged account's social history is not automatically the legitimate operator's history.
+4. Have the verified operator create a fresh venue account and claim the released listing. Verify their
+   access and the listing KJ's schedule. Do not reuse the banned account or hand off its password.
+
+```sql
+-- Replace all three UUID/text values after investigation; execute as an administrator.
+begin;
+do $$
+declare
+  target_venue text := 'REPLACE_VENUE_ID';
+  target_owner text := 'REPLACE_PLACEHOLDER_USER_ID';
+  revoked_auth uuid := '00000000-0000-0000-0000-000000000000';
+begin
+  perform 1 from app.venues where id = target_venue and owner_id = target_owner and claimed for update;
+  if not found then raise exception 'Venue ownership changed; investigate again'; end if;
+  perform 1 from app.users where id = target_owner and auth_id = revoked_auth for update;
+  if not found then raise exception 'Auth identity changed; investigate again'; end if;
+  -- Never deliver the legitimate operator's future pushes to the impersonator's devices.
+  delete from app.push_tokens where user_id = target_owner;
+  update app.users set auth_id = null where id = target_owner;
+  update app.venues set claimed = false, claimed_at = null where id = target_venue;
+end $$;
+commit;
+```

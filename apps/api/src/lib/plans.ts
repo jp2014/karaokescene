@@ -15,10 +15,3 @@ export async function hasPremium(user: User) {
 export async function requirePremium(user: User, feature: string) {
   if (!(await hasPremium(user))) fail(403, `${feature} is a ${PLAN_NAME[user.role]} feature`);
 }
-
-/** Mock checkout (payments are "coming soon"); also lets the demo switch plans off again. */
-export async function setPremium(user: User, on: boolean) {
-  if (user.role === 'venue') await db.update(schema.venues).set({ isPremiere: on }).where(eq(schema.venues.ownerId, user.id));
-  else await db.update(schema.users).set({ isPremium: on }).where(eq(schema.users.id, user.id));
-  return { isPremium: on };
-}

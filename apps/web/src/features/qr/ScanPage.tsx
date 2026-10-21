@@ -1,20 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Camera, ImagePlus, QrCode, ScanLine, Star, Ticket } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Camera, ImagePlus, ScanLine, Star, Ticket } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Avatar, ROLE_LABEL } from '~/components/Avatar';
+import { ROLE_LABEL } from '~/components/Avatar';
 import { FilePicker } from '~/components/FilePicker';
 import { QrCard } from '~/components/QrCard';
 import { Button, Card, cx, Pill, Section, Segmented } from '~/components/ui';
 import { GalleryTile, VenueArt } from '~/components/VenueArt';
 import { api, unwrap } from '~/lib/api';
-import { useLocation } from '~/lib/location';
-import { useAction, useBooth, useCircle, useMe, useRegulars, useVenues } from '~/lib/queries';
+import { DemoScans } from '~/lib/demo';
+import { useAction, useBooth, useMe, useRegulars } from '~/lib/queries';
 import { parseQr, useQrScan } from './useQrScan';
 
 declare global {
-  // Chrome/Edge/Android ship BarcodeDetector; elsewhere we fall back to simulated scans.
+  // Chrome/Edge/Android ship BarcodeDetector; elsewhere the phone's own camera app opens the QR URL.
   // eslint-disable-next-line no-var
   var BarcodeDetector: { new (o: { formats: string[] }): { detect(src: CanvasImageSource): Promise<{ rawValue: string }[]> } } | undefined;
 }
@@ -94,16 +93,16 @@ function ShareNightPhotos() {
   const venues = booth?.venues ?? [];
   const [venueId, setVenueId] = useState<string>();
   const [caption, setCaption] = useState('');
-  const [posted, setPosted] = useState<{ id: string; imageUrl: string; caption: string; hue: number }[]>([]);
+  const [posted, setPosted] = useState<{ id: string; mediaUrl: string; caption: string; hue: number }[]>([]);
   const target = venueId ?? booth?.venue?.id ?? venues[0]?.id;
   const venue = venues.find((v) => v.id === target);
   const post = useAction(
-    (imageUrl: string) => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: target! }, json: { imageUrl, caption: caption || `Tonight at ${venue?.name}`, kind: 'photo', emoji: '📸' } })),
+    (mediaUrl: string) => unwrap(api.venues[':venueId'].gallery.$post({ param: { venueId: target! }, json: { mediaUrl, caption: caption || `Tonight at ${venue?.name}` } })),
     {
       invalidate: [['venue']],
       success: `Posted to ${venue?.name}'s gallery 📸`,
       onSuccess: (r) => {
-        setPosted((p) => [{ id: r.id, imageUrl: r.imageUrl!, caption: r.caption, hue: r.hue }, ...p]);
+        setPosted((p) => [{ id: r.id, mediaUrl: r.mediaUrl!, caption: r.caption, hue: r.hue }, ...p]);
         setCaption('');
       },
     },
@@ -129,7 +128,7 @@ function ShareNightPhotos() {
         {posted.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
             {posted.map((g) => (
-              <GalleryTile key={g.id} hue={g.hue} emoji="📸" caption={g.caption} kind="photo" imageUrl={g.imageUrl} />
+              <GalleryTile key={g.id} hue={g.hue} emoji="📸" caption={g.caption} kind="photo" mediaUrl={g.mediaUrl} />
             ))}
           </div>
         )}
@@ -163,11 +162,6 @@ function Scanner() {
   const video = useRef<HTMLVideoElement>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const scan = useQrScan();
-  const loc = useLocation();
-  const { data: venues } = useVenues({ lat: loc.current.lat, lng: loc.current.lng, radiusMi: 20 });
-  const { data: circle } = useCircle();
-  const { data: me } = useMe();
-  const issued = useQuery({ queryKey: ['issued'], queryFn: () => unwrap(api.wallet.issued.$get()), enabled: me?.role === 'venue' });
   const supported = typeof window !== 'undefined' && !!window.BarcodeDetector;
 
   useEffect(() => {
@@ -192,7 +186,7 @@ function Scanner() {
           await new Promise((r) => setTimeout(r, 250));
         }
       } catch {
-        toast.error('Camera unavailable. Use a simulated scan below.');
+        toast.error('Camera unavailable. Point your phone camera at the code instead.');
         setCameraOn(false);
       }
     })();
@@ -201,11 +195,6 @@ function Scanner() {
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, [cameraOn]);
-
-  const isVenue = me?.role === 'venue';
-  const nearby = isVenue ? [] : (venues?.venues.filter((v) => v.isLive).slice(0, 4) ?? []);
-  const people = isVenue ? [] : [...(circle?.friends ?? []), ...(circle?.incoming ?? [])].slice(0, 4);
-  const coupons = issued.data?.filter((c) => c.status === 'active').slice(0, 4) ?? [];
 
   return (
     <div className="space-y-6">
@@ -237,48 +226,11 @@ function Scanner() {
         )}
       </div>
 
-      <Section title="Simulate a scan" icon={<QrCode className="size-5 text-pink" />}>
-        <p className="-mt-1 text-sm text-muted">For the demo: pretend you just scanned one of these codes.</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {nearby.map((v) => (
-            <Card key={v.id} className="flex items-center gap-3 p-3">
-              <VenueArt name={v.name} hue={v.hue} photoUrl={v.photoUrl} className="size-11 rounded-xl" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{v.name}</div>
-                <div className="text-xs text-muted">Venue code → check in</div>
-              </div>
-              <Button size="sm" onClick={() => scan({ kind: 'v', key: v.slug })}>
-                Scan
-              </Button>
-            </Card>
-          ))}
-          {coupons.map((c) => (
-            <Card key={c.id} className="flex items-center gap-3 p-3">
-              {c.singer && <Avatar user={c.singer} />}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{c.title}</div>
-                <div className="text-xs text-muted">{c.singer?.displayName}'s coupon → redeem</div>
-              </div>
-              <Button size="sm" onClick={() => scan({ kind: 'c', key: c.code })}>
-                Scan
-              </Button>
-            </Card>
-          ))}
-          {isVenue && !coupons.length && <p className="text-sm text-muted">No unredeemed coupons. Award one to a singer from Venue HQ.</p>}
-          {people.map((u) => (
-            <Card key={u.id} className="flex items-center gap-3 p-3">
-              <Avatar user={u} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{u.displayName}</div>
-                <div className="text-xs text-muted">QR card → connect</div>
-              </div>
-              <Button size="sm" onClick={() => scan({ kind: 'u', key: u.handle })}>
-                Scan
-              </Button>
-            </Card>
-          ))}
-        </div>
-      </Section>
+      {DemoScans && (
+        <Suspense>
+          <DemoScans />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,0 +1,43 @@
+import { serviceHeaders, type SupabaseConfig } from './supabase.ts';
+
+/** Where uploaded media goes. Returns the public URL of the stored file. */
+export type MediaStore = { put(key: string, body: Uint8Array<ArrayBuffer>, contentType: string): Promise<string> };
+
+let store: MediaStore | null = null;
+
+export function setMediaStore(s: MediaStore) {
+  store = s;
+}
+
+export function mediaStore(): MediaStore {
+  if (!store) throw new Error('No media store configured');
+  return store;
+}
+
+const BUCKET = 'media';
+
+/** Supabase Storage, public `media` bucket (created by the platform migration). */
+export function supabaseStorage(cfg: SupabaseConfig): MediaStore {
+  return {
+    async put(key, body, contentType) {
+      const res = await fetch(`${cfg.url}/storage/v1/object/${BUCKET}/${key}`, {
+        method: 'POST',
+        headers: { ...serviceHeaders(cfg), 'content-type': contentType },
+        body,
+      });
+      if (!res.ok) throw new Error(`storage upload ${res.status}: ${await res.text()}`);
+      return `${cfg.url}/storage/v1/object/public/${BUCKET}/${key}`;
+    },
+  };
+}
+
+/** Where `put` URLs start, so photo fields only accept files that went through our upload route. */
+const STORED_PREFIXES = () => {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
+  return url ? [`${url}/storage/v1/object/public/${BUCKET}/`] : ['/api/media/'];
+};
+export const isStoredMediaUrl = (url: string) => STORED_PREFIXES().some((prefix) => {
+  try {
+    return url.startsWith(prefix) && new URL(url, 'https://local.invalid').href.startsWith(new URL(prefix, 'https://local.invalid').href);
+  } catch { return false; }
+});

@@ -5,16 +5,19 @@ import { useState } from 'react';
 import { qrUrl } from '~/components/QrCard';
 import { Card, cx, EmptyState, PageLoader, Pill, Section, Sheet } from '~/components/ui';
 import { VenueArt } from '~/components/VenueArt';
+import { DEMO } from '~/lib/demo';
 import { dateLabel } from '~/lib/format';
 import { useWallet, type Coupon } from '~/lib/queries';
 
 /** My Wallet: coupons venues have given you. Each one is a one-time QR the venue scans. */
 export function WalletPage() {
   const { data, isLoading } = useWallet();
-  const [open, setOpen] = useState<Coupon | null>(null);
+  // By id, so the sheet closes by itself once the venue redeems the coupon (the wallet refetches on Realtime).
+  const [openId, setOpenId] = useState<string | null>(null);
   if (isLoading || !data) return <PageLoader />;
   const active = data.filter((c) => c.status === 'active');
   const past = data.filter((c) => c.status !== 'active');
+  const open = active.find((c) => c.id === openId) ?? null;
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -26,7 +29,7 @@ export function WalletPage() {
       {active.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {active.map((c) => (
-            <CouponCard key={c.id} c={c} onOpen={() => setOpen(c)} />
+            <CouponCard key={c.id} c={c} onOpen={() => setOpenId(c.id)} />
           ))}
         </div>
       ) : (
@@ -41,7 +44,7 @@ export function WalletPage() {
           </div>
         </Section>
       )}
-      <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.venue.name}>
+      <Sheet open={!!open} onClose={() => setOpenId(null)} title={open?.venue.name}>
         {open && (
           <div className="text-center">
             <div className="font-display text-2xl font-bold">{open.title}</div>
@@ -51,7 +54,7 @@ export function WalletPage() {
             </div>
             <div className="mt-3 font-mono text-lg tracking-[0.3em]">{open.code}</div>
             <p className="mt-3 text-xs text-muted">One-time use · expires {dateLabel(open.expiresAt)}. Only {open.venue.name} can redeem it.</p>
-            <p className="mt-2 text-xs text-faint">Demo: sign in as the venue and use Scan & Share → Redeem a coupon.</p>
+            {DEMO && <p className="mt-2 text-xs text-faint">Demo: sign in as the venue and use Scan & Share → Redeem a coupon.</p>}
           </div>
         )}
       </Sheet>

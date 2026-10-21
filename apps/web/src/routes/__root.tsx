@@ -1,16 +1,19 @@
 import { createRootRouteWithContext, Outlet, redirect, useRouterState } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { AppShell } from '~/features/shell/AppShell';
-import { tokenStore } from '~/lib/api';
+import { auth } from '~/lib/auth';
+import { sessionQuery } from '~/lib/queries';
 
 const PUBLIC = ['/welcome', '/about'];
 const isBare = (path: string) => PUBLIC.some((p) => path.startsWith(p));
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  beforeLoad: ({ location }) => {
-    if (!tokenStore.get() && !isBare(location.pathname)) {
-      throw redirect({ to: '/welcome', search: { next: location.href } });
-    }
+  beforeLoad: async ({ location, context }) => {
+    if (isBare(location.pathname)) return;
+    if (!auth.signedIn()) throw redirect({ to: '/welcome', search: { next: location.href } });
+    // Signed in but no profile yet (first sign-in): finish onboarding on the welcome page.
+    const session = await context.queryClient.ensureQueryData(sessionQuery).catch(() => null);
+    if (session && session.status !== 'ready') throw redirect({ to: '/welcome', search: { next: location.href } });
   },
   component: Root,
   notFoundComponent: () => (

@@ -1,3 +1,4 @@
+import { DEMO } from '~/lib/demo';
 import { Link } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { Award, Bell, CalendarHeart, Check, Disc3, DoorOpen, Map, Megaphone, Mic2, QrCode, Star, Store, Users } from 'lucide-react';
@@ -21,7 +22,7 @@ const AUDIENCES = [
     icon: Store,
     who: 'For venues',
     color: 'from-cyan to-live',
-    points: ['Post events, drink specials, hours, happy hours and your menu', 'Reward singers with one-time coupons', 'Rate your KJs and choose who hosts', 'Promote tonight to singers nearby', 'Premier: priority listing, who’s going, Peak Hours, special auto-posts'],
+    points: ['Post events, drink specials, hours, happy hours and your menu', 'Reward singers with one-time coupons', 'Rate your KJs and choose who hosts', 'Promote tonight to singers nearby', 'Premier: priority listing, who’s going, Peak Hours, special reminders'],
   },
   {
     icon: Mic2,
@@ -33,8 +34,8 @@ const AUDIENCES = [
 
 const PRICING = [
   { name: 'Singer Plus', price: '$2.99', per: '/mo', body: 'Smart song recommendations and venue coupons.', icon: Star },
-  { name: 'KJ Pro', price: '$9', per: '/mo', body: 'Auto social posting, Auto Leave and Message Blast to your singers.', icon: Megaphone, featured: true },
-  { name: 'Venue Premier', price: '$49', per: '/mo', body: 'Premier listing, show who’s going, Peak Hours and Drink Special Auto Post.', icon: Store },
+  { name: 'KJ Pro', price: '$9', per: '/mo', body: 'Auto Promote reminders, Auto Leave and Message Blast to your singers.', icon: Megaphone, featured: true },
+  { name: 'Venue Premier', price: '$49', per: '/mo', body: 'Premier listing, show who’s going, Peak Hours and reminders to share your specials.', icon: Store },
 ];
 
 export function AboutPage() {
@@ -50,7 +51,7 @@ export function AboutPage() {
             </span>
           </Link>
           <Link to="/welcome">
-            <Button variant="primary">Try the demo</Button>
+            <Button variant="primary">{DEMO ? 'Try the demo' : 'Get started'}</Button>
           </Link>
         </header>
 
@@ -150,11 +151,11 @@ export function AboutPage() {
         </section>
 
         <section className="my-24 text-center">
-          <h2 className="text-4xl font-extrabold">Ready to see it?</h2>
-          <p className="mt-3 text-muted">Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.</p>
+          <h2 className="text-4xl font-extrabold">{DEMO ? 'Ready to see it?' : 'Ready to join?'}</h2>
+          <p className="mt-3 text-muted">{DEMO ? 'Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.' : 'Create an account with your email and password and find tonight’s karaoke.'}</p>
           <Link to="/welcome">
             <Button variant="primary" size="lg" className="mt-6">
-              Open the demo
+              {DEMO ? 'Open the demo' : 'Get started'}
             </Button>
           </Link>
         </section>

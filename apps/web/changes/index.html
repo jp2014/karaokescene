@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Karaoke Scene · What changed</title>
+    <link rel="icon" href="/icon.svg" />
+    <style>
+      :root {
+        --ink: #07050d;
+        --surface: #141022;
+        --line: rgb(255 255 255 / 0.08);
+        --fg: #f4f1fb;
+        --muted: #9d96b3;
+        --pink: #ff3d9a;
+        --violet: #8b5cf6;
+        --cyan: #22d3ee;
+        --gold: #ffc447;
+        --live: #3ee58f;
+        --red: #ff2d2d;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--ink); color: var(--fg); }
+      a { color: inherit; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 80px; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; }
+      .brand img { width: 34px; }
+      .grad { background: linear-gradient(90deg, var(--pink), var(--violet), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .btn { padding: 9px 16px; border-radius: 999px; background: linear-gradient(90deg, var(--pink), var(--violet)); color: #fff; font-weight: 700; text-decoration: none; font-size: 14px; }
+      h1 { font-size: clamp(32px, 5vw, 48px); line-height: 1.05; margin: 36px 0 8px; }
+      .lead { color: var(--muted); margin: 0; }
+      .legend { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+      .legend i { width: 22px; height: 14px; border: 2.5px solid var(--red); border-radius: 5px; }
+      .rounds { display: flex; gap: 8px; margin: 20px 0 0; }
+      .rounds button { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+      .rounds button.on { background: var(--fg); color: var(--ink); }
+
+      details.questions { margin-top: 24px; border: 1px solid rgb(34 211 238 / 0.3); background: rgb(34 211 238 / 0.05); border-radius: 18px; padding: 14px 18px; }
+      details.questions summary { cursor: pointer; font-weight: 700; color: var(--cyan); }
+      details.questions li { margin: 6px 0; color: var(--muted); }
+      details.questions b { color: var(--fg); }
+
+      h2 { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 44px 0 12px; }
+      .change { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 20px 0; border-top: 1px solid var(--line); scroll-margin-top: 12px; }
+      @media (min-width: 860px) { .change { grid-template-columns: 300px 1fr; } }
+      .change h3 { margin: 0; font-size: 18px; line-height: 1.25; }
+      .change p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+      .change p b { color: var(--fg); font-weight: 600; }
+      .note { margin-top: 10px; font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--gold); padding-left: 10px; font-style: italic; }
+      .try { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--pink); text-decoration: none; }
+      .pill { display: inline-block; vertical-align: 2px; margin-left: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 8px; border-radius: 999px; background: rgb(255 196 71 / 0.15); color: var(--gold); font-style: normal; }
+      .pill.new { background: rgb(62 229 143 / 0.15); color: var(--live); }
+
+      .shots { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px; }
+      .pair { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+      .arrow { color: var(--muted); font-size: 20px; margin-top: 60px; }
+      @media (max-width: 560px) { .arrow { display: none; } }
+      figure { margin: 0; }
+      figcaption { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; color: var(--muted); }
+      figure.after figcaption { color: var(--live); }
+      figure img { display: block; width: min(260px, 41vw); height: auto; border-radius: 14px; border: 1px solid var(--line); cursor: zoom-in; }
+      figure.wide img { width: min(220px, 38vw); }
+      .same { margin-top: 44px; padding: 16px 18px; border-radius: 18px; background: var(--surface); color: var(--muted); font-size: 14px; }
+      .same b { color: var(--fg); }
+      dialog { border: 0; padding: 0; background: transparent; }
+      dialog::backdrop { background: rgb(0 0 0 / 0.85); }
+      dialog img { display: block; max-width: 92vw; max-height: 92vh; border-radius: 16px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <a class="brand" href="/"><img src="/icon.svg" alt="" /> Karaoke <span class="grad">Scene</span></a>
+        <a class="btn" href="/welcome">Open the app →</a>
+      </header>
+      <div id="round"></div>
+    </div>
+    <dialog id="zoom" onclick="this.close()"><img alt="" /></dialog>
+
+    <script>
+      /**
+       * One entry per feedback round. Each change has a short title, what changed, the
+       * reviewer's note, and cropped screenshots with the change boxed in red.
+       * shots: [kind, file] where kind is 'before' | 'after'; a before followed by an
+       * after renders as a pair with an arrow.
+       */
+      const ROUNDS = [
+        {
+          id: 'password-auth', title: 'Email and password sign-in', date: 'Oct 21, 2026',
+          questions: [['Launch setup', 'Email confirmation and Google are disabled for now. Enable Email signup and turn Confirm email off in the hosted Supabase dashboard.']],
+          sections: [{ name: 'Accounts', changes: [
+            { id: 'password-signup', title: 'Create an account without an email code', did: 'Choose a role, enter an email and password, and confirm the password. Venue owners still declare that they are authorized to manage the business. Supabase creates the session immediately when email confirmation is off.', shots: [['before','signup'],['after','signup']], try: '/welcome' },
+            { id: 'password-signin', title: 'Returning users sign in with a password', did: 'Returning users enter their email and password. Google sign-in is hidden. The development demo keeps its existing persona flow.', shots: [['before','signin'],['after','signin']], try: '/welcome' },
+          ] }],
+          unchanged: 'The API still verifies Supabase sessions and creates profiles through role onboarding. Database and Cloudflare deployment order are unchanged. Password recovery is not available in the app yet.',
+        },
+        {
+          id: 'go-real', title: 'Real accounts and a real backend', date: 'Oct 20, 2026',
+          questions: [['Production setup', 'Supabase backend + Cloudflare Workers Static Assets. Production starts empty. Create the hosted project and configure email delivery before launch.']],
+          sections: [
+            { name: 'Accounts and venues', changes: [
+              { id: 'real-auth', title: 'Real email codes and Google sign-in', did: 'Supabase sends and verifies the code. First-time users choose a role; returning users keep their account. The local demo remains available for development.', shots: [['before','welcome-verify'],['after','welcome-verify'],['after','welcome-roles']], try: '/welcome' },
+              { id: 'real-claim', title: 'Owners add or claim their venue', did: 'Venue HQ offers setup instead of a dead end. Owners can find a KJ-listed venue and claim it after declaring ownership. The listing keeps its ratings and KJ schedule.', shots: [['before','venue-claim'],['after','venue-claim']], try: '/hq' },
+              { id: 'venue-pin', title: 'Choose the venue’s map pin', did: 'KJs and owners use the same venue form. Move the pin or use the current GPS position.', shots: [['before','myvenues-add'],['after','myvenues-add']], try: '/my-venues' },
+            ] },
+            { name: 'Sharing and paid plans', changes: [
+              { id: 'real-share', title: 'Share a real venue link', did: 'Use device sharing, Facebook, SMS or copy text and link. The app no longer pretends to publish a social post.', shots: [['before','kj-autopost'],['after','kj-autopost']], try: '/kj' },
+              { id: 'reminders', title: 'Reminders replace automatic posting', did: 'Auto Promote reminds the KJ to share. Drink specials can queue reminders for their days this week. Turning promotion off or deleting the special stops pending reminders.', shots: [['before','myvenues-autopromote'],['after','myvenues-autopromote'],['before','hq-specials-autopost'],['after','hq-specials-autopost']], try: '/my-venues' },
+              { id: 'coming-soon', title: 'Payments are coming soon', did: 'Production has no mock checkout. Paid features stay locked until billing is available; local demo accounts can still preview them.', shots: [['before','upgrade-sheet'],['after','upgrade-sheet']], try: '/songs' },
+            ] },
+          ],
+          unchanged: 'The demo and this change log stay development-only. Production has no seeded accounts or catalog: songs come from KJ imports. Push stays dormant for launch.',
+        },
+        {
+          id: 'v2',
+          title: 'Round 1 feedback',
+          date: 'Oct 14, 2026',
+          questions: [
+            ['KJ-created venues', 'A KJ can list a venue whose owner isn’t on the app yet. It shows as “Unclaimed” until the owner claims it. Is that what the “????” note meant?'],
+            ['Venue Praise Feed', 'Venues see only praise given in their own room, from singers and KJs.'],
+            ['KJs rating singers', 'Not in the notes, so it stays: KJs can still award singers badges.'],
+            ['“Venue Coupons?” under Singer Plus', 'Kept free: venues send coupons and singers use them from My Wallet.'],
+            ['Email sign-in', 'All the screens work, but no email is sent yet; you land in that role’s demo account.'],
+          ],
+          sections: [
+            {
+              name: 'First experience',
+              changes: [
+                { id: 'pick-profile', title: 'Pick a profile first', did: 'The welcome screen asks <b>Singer, KJ or Venue</b> instead of listing sample people.', note: 'On first open, users get option to select a profile. Singer, KJ, or Venue.', shots: [['before', 'welcome-roles'], ['after', 'welcome-roles']], try: '/welcome' },
+                { id: 'email', title: 'Email sign-in, with a venue owner disclaimer', did: 'Everyone signs in with email. Venues must confirm they’re the <b>owner or an authorized operator</b>.', note: 'Singers and KJs log in by email. Venue login by email, with a disclaimer that they must be a legit business owner or operator.', tag: 'new', shots: [['after', 'welcome-venue-email']], try: '/welcome' },
+                { id: 'verify', title: 'Email verification', did: 'A 6-digit code step follows sign-in. <b>Demo:</b> any 6 digits work.', note: 'Email Verification.', tag: 'new', shots: [['after', 'welcome-verify']], try: '/welcome' },
+                { id: 'kj-desc', title: 'KJ description mentions the song book', did: 'The KJ card leads with <b>uploading your song book</b>.', note: 'KJ Description should note song book upload.', shots: [['before', 'welcome-kj'], ['after', 'welcome-kj']], try: '/welcome' },
+              ],
+            },
+            {
+              name: 'Menus',
+              changes: [
+                { id: 'menu-singer', title: 'Singers: new My Wallet', did: 'Added <b>My Wallet</b>. Everything else stays.', note: 'Singer menus: Discover, My Night, My Wallet, Song List, Praise Feed, Friends, Profile/Settings, Scan & Share, Notifications.', shots: [['before', 'menu-singer', 'wide'], ['after', 'menu-singer', 'wide']] },
+                { id: 'menu-kj', title: 'KJs: no Discover; My Venues and Singers Near You', did: '<b>Discover is gone.</b> New <b>My Venues</b>. Friends became <b>Singers Near You</b>.', note: 'KJs: Discover not shown. My Venues. Friends: Singers near you.', shots: [['before', 'menu-kj', 'wide'], ['after', 'menu-kj', 'wide']] },
+                { id: 'menu-venue', title: 'Venues: Singers Near You', did: '<b>Discover is gone.</b> New <b>Singers Near You</b>.', note: 'Venue: See friends in area.', shots: [['before', 'menu-venue', 'wide'], ['after', 'menu-venue', 'wide']] },
+              ],
+            },
+            {
+              name: 'Singers',
+              changes: [
+                { id: 'my-night', title: 'My Night: no queue, just songs sent to the KJ', did: '<b>On stage, Your turn and the rotation are gone.</b> You see each song you sent as <b>Submitted</b> or <b>Accepted</b> by the KJ.', note: 'My Night: remove queue functions (no integration). Add songs submitted and accepted by KJ.', shots: [['before', 'mynight'], ['before', 'mynight-rotation'], ['after', 'mynight']], try: '/live' },
+                { id: 'wallet', title: 'My Wallet: venue coupons', did: 'Coupons from venues. Tap one to show a <b>one-time QR</b> the venue scans; after that it’s marked redeemed.', note: 'My Wallet: Venue Coupons, a one-time-use QR code scanned by the venue.', tag: 'new', shots: [['after', 'wallet'], ['after', 'wallet-qr']], try: '/wallet' },
+                { id: 'free-add', title: 'Song List: add any song', did: 'Type any title and artist, even if no KJ has it.', note: 'Song List: ability to free add songs.', tag: 'new', shots: [['after', 'songs-freeadd']], try: '/songs' },
+                { id: 'kj-filter', title: 'Song List: filtered to the on-site KJ', did: 'When you’re checked in, you see only songs in <b>that KJ’s song book</b> (you can switch it off). My Night has the same filter.', note: 'Filtered by nearby KJ if on site.', tag: 'new', shots: [['after', 'songs-kjfilter'], ['after', 'mynight-send']], try: '/songs' },
+                { id: 'invite', title: 'Friends: Invite out', did: 'Pick friends, a night and a venue. They get an invite; you’re marked as going.', note: 'Friends: Invite Out option.', tag: 'new', shots: [['after', 'friends-invite'], ['after', 'friends-invite-sheet']], try: '/friends' },
+                { id: 'selfie', title: 'Profile: selfie upload', did: '<b>Take a selfie</b> or upload a photo. It replaces the emoji avatar everywhere. <i>(Sample photo shown.)</i>', note: 'Profile/Settings: Selfie Pic Upload.', shots: [['before', 'singer-avatar'], ['after', 'singer-avatar']], try: '/me' },
+                { id: 'regulars', title: 'Scan & Share: become a Regular', did: '<b>5 nights</b> checked in at a venue makes you a Regular there. The section shows your progress at each venue.', note: 'Scan & Share: 5 or more check-ins makes you a regular at a Venue.', tag: 'new', shots: [['after', 'scan-regulars']], try: '/scan' },
+              ],
+            },
+            {
+              name: 'Trust badges (all positive)',
+              changes: [
+                { id: 'rate-venues', title: 'Singers rate venues and KJs', did: 'Venue pages show what <b>singers say</b>, with a <b>Rate</b> button. KJ profiles work the same way. Singers can also rate each other.', note: 'Singers rate each other. Singers rate Venues and KJs.', tag: 'new', shots: [['after', 'venue-ratings'], ['after', 'venue-rate-sheet']], try: '/venues/neon-mic' },
+                { id: 'coupons', title: 'Venues send singers coupons', did: 'Venue HQ lists who’s in the room; tap <b>Coupon</b> to send one to their wallet.', note: 'Venue can award Singers Coupons.', tag: 'new', shots: [['after', 'hq-reward'], ['after', 'hq-coupon-sheet']], try: '/hq' },
+              ],
+            },
+            {
+              name: 'KJs',
+              changes: [
+                { id: 'booth', title: 'KJ Booth: submitted songs with Accept', did: '<b>On stage and the rotation are gone.</b> Enter the song in your own KJ software, then tap <b>Accept</b>. That’s the only update the app needs.', note: 'Remove “On Stage”. Show submitted songs with approval button. No direct integration between KJ queue and app; not expecting KJ to update constantly.', shots: [['before', 'booth'], ['after', 'booth']], try: '/kj' },
+                { id: 'my-venues', title: 'My Venues: hours and Auto Promote', did: '<b>Adjust hours</b> for your nights at each venue. <b>Auto Promote</b> posts each night 24 hours before it starts.', note: 'My Venues: Adjust Hours, Auto Promote 24 hours.', tag: 'new', shots: [['after', 'myvenues']], try: '/my-venues' },
+                { id: 'add-venue', title: 'Add a venue without the owner', did: 'KJs can list a bar that isn’t on the app yet. It shows as <b>Unclaimed</b> until the owner claims it.', note: 'KJ need to be able to create Venues without the Venue owner. ????', tag: 'new', shots: [['after', 'myvenues-add'], ['after', 'venue-unclaimed']], try: '/my-venues' },
+                { id: 'kj-promote', title: 'Singers Near You + Promote tonight', did: 'One tap pings every singer nearby about tonight’s show (once per singer per night).', note: 'Friends: Singers near you, Auto Promote tonight button.', shots: [['before', 'kj-friends'], ['after', 'kj-promote']], try: '/friends' },
+                { id: 'kj-photos', title: 'Scan & Share: photo upload', did: 'Take or upload a photo; it goes to the venue’s gallery. <i>(Sample photo shown.)</i>', note: 'Scan and Share: Pic Upload.', tag: 'new', shots: [['after', 'kj-scan-photos']], try: '/scan' },
+              ],
+            },
+            {
+              name: 'Venues',
+              changes: [
+                { id: 'venue-feed', title: 'Praise Feed: only your room', did: 'Shows praise from singers and KJs <b>at your venue</b> instead of the whole scene.', note: 'Praise Feed: confine to praise from Singers and KJ praise.', shots: [['before', 'venue-feed'], ['after', 'venue-feed']], try: '/feed' },
+                { id: 'venue-settings', title: 'Settings: business details, not a person’s profile', did: '<b>Removed</b> Ghost Mode, emoji icon, age and years. <b>Added</b> a picture upload and venue type.', note: 'Picture Upload. No Ghost, No Icon, No Age, No Years. Venue Type (Bar, Lounge, Restaurant, Karaoke Booths, Live Band Karaoke, Full Time Karaoke).', shots: [['before', 'venue-profile'], ['after', 'venue-settings-details']], try: '/me' },
+                { id: 'venue-hours', title: 'Settings: hours and happy hours', did: 'Opening hours per day and any number of happy hours.', note: 'Hours, Happy Hours.', tag: 'new', shots: [['after', 'venue-settings-hours']], try: '/me' },
+                { id: 'venue-food', title: 'Settings: food & menu, associated KJs', did: '<b>Food available</b> reveals menu PDF upload or a link. Add or remove your KJs.', note: 'Food Available (Check Box) = Menu Upload (PDF) or Link. Associated KJs.', tag: 'new', shots: [['after', 'venue-settings-food'], ['after', 'venue-info']], try: '/me' },
+                { id: 'venue-promote', title: 'Singers Near You + Promote tonight', did: 'Same as KJs: see singers nearby and promote tonight in one tap.', note: 'See Friends in area. Auto Promote.', tag: 'new', shots: [['after', 'venue-promote']], try: '/friends' },
+              ],
+            },
+            {
+              name: 'Paid plans',
+              changes: [
+                { id: 'plans', title: 'One plan per role; paid features show a lock', did: '<b>Singer Plus</b>: smart recommendations. <b>KJ Pro</b>: auto social posting, Auto Leave, Message Blast. <b>Venue Premier</b>: premier listing, who’s going, Peak Hours, special auto-posts. The demo accounts start upgraded; switch a plan off in <b>Profile → Manage plan</b> to see the locks.', note: 'Premier features. Singers: Smart Song Recommendations. KJs: Auto Social Posting, Auto Leave, Message Blast Singers. Venue: Premier Listing, Show Singers Going, Show Peak Hours, Drink Special Auto Post.', shots: [['before', 'hq-premiere'], ['after', 'hq-premier'], ['after', 'booth-locked'], ['after', 'hq-locked']] },
+                { id: 'special-autopost', title: 'Drink Special Auto Post', did: 'Toggle when posting a special to announce it automatically on each of its days.', note: 'Venue: Drink Special Auto Post.', tag: 'new', shots: [['after', 'hq-specials-autopost']], try: '/hq' },
+              ],
+            },
+          ],
+          unchanged: 'Unchanged (marked “perfect”): <b>Praise Feed</b> for singers and KJs, <b>Notifications</b>, <b>Venue HQ</b> layout, and venue <b>Scan & Share</b> (venues can now also redeem coupons there).',
+        },
+      ];
+
+      const params = new URLSearchParams(location.search);
+      const round = ROUNDS.find((r) => r.id === params.get('round')) ?? ROUNDS[0];
+      const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+      const fig = ([kind, file, wide]) => `<figure class="${kind}${wide ? ' wide' : ''}"><figcaption>${kind}</figcaption><img loading="lazy" src="${round.id}/${kind}/${file}.jpg" alt="${kind}: ${file}" /></figure>`;
+
+      /** Befores and their after sit together with an arrow; extra afters follow. */
+      function shots(list) {
+        const befores = list.filter((s) => s[0] === 'before');
+        const afters = list.filter((s) => s[0] === 'after');
+        if (!befores.length) return afters.map(fig).join('');
+        return `<div class="pair">${befores.map(fig).join('')}<span class="arrow">→</span>${fig(afters[0])}</div>${afters.slice(1).map(fig).join('')}`;
+      }
+
+      document.title = `Karaoke Scene · ${round.title}`;
+      document.getElementById('round').innerHTML = `
+        ${ROUNDS.length > 1 ? `<div class="rounds">${ROUNDS.map((r) => `<a href="?round=${r.id}"><button class="${r === round ? 'on' : ''}">${esc(r.title)}</button></a>`).join('')}</div>` : ''}
+        <h1>What <span class="grad">changed</span></h1>
+        <p class="lead">${esc(round.title)} · ${esc(round.date)} · ${round.sections.reduce((n, s) => n + s.changes.length, 0)} changes</p>
+        <div class="legend"><i></i> Red boxes mark what changed. Click any screenshot to enlarge it.</div>
+        <details class="questions"><summary>${round.questions.length} things we’d like you to confirm</summary><ul>${round.questions.map(([q, a]) => `<li><b>${esc(q)}:</b> ${esc(a)}</li>`).join('')}</ul></details>
+        ${round.sections
+          .map(
+            (s) => `<h2>${esc(s.name)}</h2>${s.changes
+              .map(
+                (c) => `<article class="change" id="${c.id}">
+                  <div>
+                    <h3>${esc(c.title)}${c.tag ? `<span class="pill new">new</span>` : ''}</h3>
+                    <p>${c.did}</p>
+                    <div class="note">“${esc(c.note)}”</div>
+                    ${c.try ? `<a class="try" href="${c.try}">Try it →</a>` : ''}
+                  </div>
+                  <div class="shots">${shots(c.shots)}</div>
+                </article>`,
+              )
+              .join('')}`,
+          )
+          .join('')}
+        <div class="same">${round.unchanged}</div>`;
+
+      const zoom = document.getElementById('zoom');
+      document.addEventListener('click', (e) => {
+        const img = e.target.closest('figure img');
+        if (!img) return;
+        zoom.querySelector('img').src = img.src;
+        zoom.showModal();
+      });
+    </script>
+  </body>
+</html>

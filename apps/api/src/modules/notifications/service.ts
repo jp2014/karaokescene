@@ -1,10 +1,15 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
+import { defer } from '../../lib/defer.ts';
 import { newId } from '../../lib/ids.ts';
+import { push } from '../../lib/push.ts';
+import { realtime } from '../../lib/realtime.ts';
 
 export type NotificationKind =
   | 'auto-leave'
+  | 'venue-claimed'
+  | 'promo-reminder'
   | 'check-in'
   | 'badge'
   | 'praise'
@@ -22,16 +27,14 @@ export type NotificationKind =
   | 'regular';
 
 export const notifications = {
-  async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }) {
-    await db.insert(schema.notifications).values({
-      id: newId('ntf'),
-      userId,
-      kind: n.kind,
-      title: n.title,
-      body: n.body ?? '',
-      link: n.link,
-      createdAt: clock.now(),
-    });
+  /** Store it for the in-app list, nudge any open app over Realtime, and push to their devices. */
+  async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }, dedupeId?: string) {
+    const row = { id: dedupeId ?? newId('ntf'), userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: clock.now() };
+    const inserted = await db.insert(schema.notifications).values(row).onConflictDoNothing().returning({ id: schema.notifications.id });
+    if (!inserted.length) return false;
+    realtime.publish(`user:${userId}`, 'notification', { id: row.id, kind: row.kind });
+    defer('push', () => push.send(userId, row));
+    return true;
   },
 
   async list(userId: string) {

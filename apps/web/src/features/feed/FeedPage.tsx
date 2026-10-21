@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { MessageCircleHeart, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar } from '~/components/Avatar';
-import { Card, PageLoader, Pill, Section } from '~/components/ui';
+import { Card, PageLoader, Pill, Section, EmptyState } from '~/components/ui';
 import { dateLabel, timeLabel } from '~/lib/format';
 import { useCircle, useEvents, useMe, usePraiseFeed } from '~/lib/queries';
 import { PraiseSheet } from '~/features/profile/ProfileActions';
@@ -40,11 +40,18 @@ export function FeedPage() {
           </Card>
         )}
         <PraiseList items={data?.items ?? []} />
-        {data?.scope && !data.items.length && <p className="text-sm text-muted">No praise at your venue yet. It shows up here when singers and KJs hype each other up in your room.</p>}
+        {data && !data.items.length && (
+          <EmptyState
+            icon={<MessageCircleHeart />}
+            title="No shout-outs yet"
+            body={data.scope ? 'Praise shows up here when singers and KJs hype each other up in your room.' : 'When singers, KJs and venues give each other badges and praise, it shows up here. Check in somewhere and start the hype.'}
+          />
+        )}
       </div>
       <aside className="space-y-6">
         <Section title="Happening soon" icon={<Trophy className="size-5 text-gold" />}>
           <div className="space-y-2">
+            {events && !events.length && <p className="text-sm text-muted">No events posted yet. Venues post competitions, theme nights and more here.</p>}
             {events?.slice(0, 8).map((e) => (
               <Link key={e.id} to="/venues/$slug" params={{ slug: e.venueSlug }} className="block rounded-2xl border border-line bg-surface/70 p-3 transition hover:border-line-strong">
                 <div className="flex items-center justify-between gap-2">

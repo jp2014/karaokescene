@@ -1,8 +1,14 @@
-import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, real, primaryKey, index } from 'drizzle-orm/sqlite-core';
+import { bigint, boolean, doublePrecision, index, integer, jsonb, pgSchema, primaryKey, text, uuid } from 'drizzle-orm/pg-core';
+
+/**
+ * Everything lives in the `app` schema. On Supabase only `public` is exposed through the
+ * Data API, so these tables are reachable only through our API (which runs as the owner).
+ */
+export const app = pgSchema('app');
+const table = app.table;
 
 /** All timestamps are epoch milliseconds. */
-const ts = (name: string) => integer(name);
+const ts = (name: string) => bigint(name, { mode: 'number' });
 
 export type Role = 'singer' | 'kj' | 'venue';
 export type Visibility = 'everyone' | 'friends' | 'nobody';
@@ -15,8 +21,10 @@ export type PrivacySettings = {
   songList: Visibility;
 };
 
-export const users = sqliteTable('users', {
+export const users = table('users', {
   id: text('id').primaryKey(),
+  /** The Supabase Auth user (auth.users.id) this profile belongs to. Null for seeded demo accounts. */
+  authId: uuid('auth_id').unique(),
   role: text('role').$type<Role>().notNull(),
   handle: text('handle').notNull().unique(),
   displayName: text('display_name').notNull(),
@@ -29,22 +37,16 @@ export const users = sqliteTable('users', {
   ageRange: text('age_range'),
   favoriteNight: text('favorite_night'),
   yearsSinging: integer('years_singing'),
-  isPro: integer('is_pro', { mode: 'boolean' }).notNull().default(false),
-  ghostMode: integer('ghost_mode', { mode: 'boolean' }).notNull().default(false),
-  privacy: text('privacy', { mode: 'json' }).$type<PrivacySettings>().notNull(),
+  isPro: boolean('is_pro').notNull().default(false),
+  ghostMode: boolean('ghost_mode').notNull().default(false),
+  privacy: jsonb('privacy').$type<PrivacySettings>().notNull(),
   /** Last known location (from the device or a simulated location). */
-  lat: real('lat'),
-  lng: real('lng'),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
   /** Growth loop: who brought this user in and how many people they've brought. */
   referredById: text('referred_by_id'),
   qrScans: integer('qr_scans').notNull().default(0),
-  isPremium: integer('is_premium', { mode: 'boolean' }).notNull().default(false),
-  createdAt: ts('created_at').notNull(),
-});
-
-export const sessions = sqliteTable('sessions', {
-  token: text('token').primaryKey(),
-  userId: text('user_id').notNull(),
+  isPremium: boolean('is_premium').notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
 
@@ -54,13 +56,15 @@ export type VenueType = (typeof VENUE_TYPES)[number];
 export type OpenHours = { day: number; openMin: number; closeMin: number };
 export type HappyHour = { days: number[]; startMin: number; endMin: number; details: string };
 
-export const venues = sqliteTable('venues', {
+export const venues = table('venues', {
   id: text('id').primaryKey(),
   /** The venue's account. KJ-listed venues get a placeholder account until the owner claims it. */
-  ownerId: text('owner_id').notNull(),
-  claimed: integer('claimed', { mode: 'boolean' }).notNull().default(true),
+  ownerId: text('owner_id').notNull().unique(),
+  claimed: boolean('claimed').notNull().default(true),
   /** The KJ who listed this venue, when it wasn't created by its owner. */
   createdById: text('created_by_id'),
+  /** When the owner claimed a KJ-listed venue (self-serve, so it's recorded). */
+  claimedAt: ts('claimed_at'),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   tagline: text('tagline').notNull().default(''),
@@ -68,23 +72,23 @@ export const venues = sqliteTable('venues', {
   address: text('address').notNull(),
   neighborhood: text('neighborhood').notNull(),
   city: text('city').notNull(),
-  lat: real('lat').notNull(),
-  lng: real('lng').notNull(),
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
   hue: integer('hue').notNull().default(280),
-  isPremiere: integer('is_premiere', { mode: 'boolean' }).notNull().default(false),
+  isPremiere: boolean('is_premiere').notNull().default(false),
   capacity: integer('capacity').notNull().default(80),
-  vibes: text('vibes', { mode: 'json' }).$type<string[]>().notNull(),
+  vibes: jsonb('vibes').$type<string[]>().notNull(),
   photoUrl: text('photo_url'),
-  venueTypes: text('venue_types', { mode: 'json' }).$type<VenueType[]>().notNull().default(sql`'[]'`),
-  hours: text('hours', { mode: 'json' }).$type<OpenHours[]>().notNull().default(sql`'[]'`),
-  happyHours: text('happy_hours', { mode: 'json' }).$type<HappyHour[]>().notNull().default(sql`'[]'`),
-  foodAvailable: integer('food_available', { mode: 'boolean' }).notNull().default(false),
+  venueTypes: jsonb('venue_types').$type<VenueType[]>().notNull().default([]),
+  hours: jsonb('hours').$type<OpenHours[]>().notNull().default([]),
+  happyHours: jsonb('happy_hours').$type<HappyHour[]>().notNull().default([]),
+  foodAvailable: boolean('food_available').notNull().default(false),
   /** Menu as an uploaded PDF or an external link. */
   menuUrl: text('menu_url'),
 });
 
 /** Weekly recurring karaoke nights. Minutes are from local midnight; end may exceed 1440 (past midnight). */
-export const karaokeNights = sqliteTable('karaoke_nights', {
+export const karaokeNights = table('karaoke_nights', {
   id: text('id').primaryKey(),
   venueId: text('venue_id').notNull(),
   kjId: text('kj_id'),
@@ -93,19 +97,19 @@ export const karaokeNights = sqliteTable('karaoke_nights', {
   endMin: integer('end_min').notNull(),
 });
 
-export const kjVenueLinks = sqliteTable(
+export const kjVenueLinks = table(
   'kj_venue_links',
   {
     kjId: text('kj_id').notNull(),
     venueId: text('venue_id').notNull(),
     /** Auto Promote: post every upcoming night 24 hours before it starts. */
-    autoPromote: integer('auto_promote', { mode: 'boolean' }).notNull().default(false),
+    autoPromote: boolean('auto_promote').notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.kjId, t.venueId] })],
 );
 
 /** "KJ Now": a KJ is on-site and running the show. */
-export const kjSessions = sqliteTable('kj_sessions', {
+export const kjSessions = table('kj_sessions', {
   id: text('id').primaryKey(),
   kjId: text('kj_id').notNull(),
   venueId: text('venue_id').notNull(),
@@ -113,7 +117,7 @@ export const kjSessions = sqliteTable('kj_sessions', {
   endedAt: ts('ended_at'),
 });
 
-export const checkins = sqliteTable(
+export const checkins = table(
   'checkins',
   {
     id: text('id').primaryKey(),
@@ -127,7 +131,7 @@ export const checkins = sqliteTable(
   (t) => [index('checkins_venue_idx').on(t.venueId, t.checkedOutAt)],
 );
 
-export const events = sqliteTable('events', {
+export const events = table('events', {
   id: text('id').primaryKey(),
   venueId: text('venue_id').notNull(),
   title: text('title').notNull(),
@@ -138,39 +142,40 @@ export const events = sqliteTable('events', {
   createdAt: ts('created_at').notNull(),
 });
 
-export const specials = sqliteTable('specials', {
+export const specials = table('specials', {
   id: text('id').primaryKey(),
   venueId: text('venue_id').notNull(),
   title: text('title').notNull(),
   price: text('price').notNull().default(''),
   details: text('details').notNull().default(''),
-  days: text('days', { mode: 'json' }).$type<number[]>().notNull(),
-  /** Drink Special Auto Post (Premier): announce it on each of its days. */
-  autoPost: integer('auto_post', { mode: 'boolean' }).notNull().default(false),
+  days: jsonb('days').$type<number[]>().notNull(),
+  /** Premier reminders to share a special on its days. */
+  autoPost: boolean('auto_post').notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
 
 /** "Who's going": a user plans to be at a venue on a date (YYYY-MM-DD). */
-export const rsvps = sqliteTable(
+export const rsvps = table(
   'rsvps',
   { userId: text('user_id').notNull(), venueId: text('venue_id').notNull(), date: text('date').notNull() },
   (t) => [primaryKey({ columns: [t.userId, t.venueId, t.date] })],
 );
 
-export const galleryItems = sqliteTable('gallery_items', {
+export const galleryItems = table('gallery_items', {
   id: text('id').primaryKey(),
   venueId: text('venue_id').notNull(),
   uploaderId: text('uploader_id').notNull(),
   kind: text('kind').$type<'photo' | 'video'>().notNull(),
   caption: text('caption').notNull().default(''),
+  /** Uploaded photo/video in object storage. Null for generated art (hue + emoji). */
+  mediaUrl: text('media_url'),
   hue: integer('hue').notNull(),
   emoji: text('emoji').notNull(),
-  imageUrl: text('image_url'),
-  featured: integer('featured', { mode: 'boolean' }).notNull().default(false),
+  featured: boolean('featured').notNull().default(false),
   createdAt: ts('created_at').notNull(),
 });
 
-export const songs = sqliteTable('songs', {
+export const songs = table('songs', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   artist: text('artist').notNull(),
@@ -178,18 +183,18 @@ export const songs = sqliteTable('songs', {
   decade: text('decade').notNull(),
 });
 
-export const songListEntries = sqliteTable(
+export const songListEntries = table(
   'song_list_entries',
   {
     userId: text('user_id').notNull(),
     songId: text('song_id').notNull(),
-    isGoTo: integer('is_go_to', { mode: 'boolean' }).notNull().default(false),
+    isGoTo: boolean('is_go_to').notNull().default(false),
     addedAt: ts('added_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.songId] })],
 );
 
-export const songbookEntries = sqliteTable(
+export const songbookEntries = table(
   'songbook_entries',
   { kjId: text('kj_id').notNull(), songId: text('song_id').notNull() },
   (t) => [primaryKey({ columns: [t.kjId, t.songId] })],
@@ -199,7 +204,7 @@ export const songbookEntries = sqliteTable(
  * A singer's song submission to the KJ running the show. The app does not mirror the KJ's
  * own rotation software: the KJ just accepts a submission once it's in their system.
  */
-export const songRequests = sqliteTable('song_requests', {
+export const songRequests = table('song_requests', {
   id: text('id').primaryKey(),
   kjSessionId: text('kj_session_id').notNull(),
   singerId: text('singer_id').notNull(),
@@ -211,7 +216,7 @@ export const songRequests = sqliteTable('song_requests', {
 });
 
 /** Venue Coupons: awarded by a venue to a singer, redeemed once when the venue scans the QR. */
-export const coupons = sqliteTable(
+export const coupons = table(
   'coupons',
   {
     id: text('id').primaryKey(),
@@ -228,7 +233,7 @@ export const coupons = sqliteTable(
   (t) => [index('coupons_singer_idx').on(t.singerId)],
 );
 
-export const badgeAwards = sqliteTable('badge_awards', {
+export const badgeAwards = table('badge_awards', {
   id: text('id').primaryKey(),
   badgeKey: text('badge_key').notNull(),
   recipientId: text('recipient_id').notNull(),
@@ -236,7 +241,7 @@ export const badgeAwards = sqliteTable('badge_awards', {
   createdAt: ts('created_at').notNull(),
 });
 
-export const praise = sqliteTable('praise', {
+export const praise = table('praise', {
   id: text('id').primaryKey(),
   fromId: text('from_id').notNull(),
   toId: text('to_id').notNull(),
@@ -247,7 +252,7 @@ export const praise = sqliteTable('praise', {
   createdAt: ts('created_at').notNull(),
 });
 
-export const friendships = sqliteTable(
+export const friendships = table(
   'friendships',
   {
     requesterId: text('requester_id').notNull(),
@@ -258,7 +263,7 @@ export const friendships = sqliteTable(
   (t) => [primaryKey({ columns: [t.requesterId, t.addresseeId] })],
 );
 
-export const favorites = sqliteTable(
+export const favorites = table(
   'favorites',
   {
     userId: text('user_id').notNull(),
@@ -269,36 +274,54 @@ export const favorites = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.targetType, t.targetId] })],
 );
 
-export const blocks = sqliteTable(
+export const blocks = table(
   'blocks',
   { userId: text('user_id').notNull(), blockedId: text('blocked_id').notNull(), createdAt: ts('created_at').notNull() },
   (t) => [primaryKey({ columns: [t.userId, t.blockedId] })],
 );
 
-export const notifications = sqliteTable('notifications', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  kind: text('kind').notNull(),
-  title: text('title').notNull(),
-  body: text('body').notNull().default(''),
-  link: text('link'),
-  readAt: ts('read_at'),
-  createdAt: ts('created_at').notNull(),
-});
+export const notifications = table(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    kind: text('kind').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    link: text('link'),
+    readAt: ts('read_at'),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('notifications_user_idx').on(t.userId, t.createdAt)],
+);
 
-export const promoPosts = sqliteTable('promo_posts', {
+export const promoPosts = table('promo_posts', {
   id: text('id').primaryKey(),
+  /** Source night or special, so deleting it cancels outstanding reminders. */
+  sourceKey: text('source_key'),
   authorId: text('author_id').notNull(),
   venueId: text('venue_id'),
-  networks: text('networks', { mode: 'json' }).$type<string[]>().notNull(),
+  networks: jsonb('networks').$type<string[]>().notNull(),
   body: text('body').notNull(),
   scheduledFor: ts('scheduled_for').notNull(),
   status: text('status').$type<'scheduled' | 'posted'>().notNull(),
   createdAt: ts('created_at').notNull(),
 });
 
+/** Devices registered for push (FCM tokens from the PWA, and later the native apps). */
+export const pushTokens = table(
+  'push_tokens',
+  {
+    token: text('token').primaryKey(),
+    userId: text('user_id').notNull(),
+    platform: text('platform').$type<'web' | 'ios' | 'android'>().notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [index('push_tokens_user_idx').on(t.userId)],
+);
+
 /** Key/value settings, used for things like the demo clock override. */
-export const appSettings = sqliteTable('app_settings', {
+export const appSettings = table('app_settings', {
   key: text('key').primaryKey(),
-  value: text('value', { mode: 'json' }).notNull(),
+  value: jsonb('value').notNull(),
 });

@@ -1,10 +1,17 @@
-import { and, asc, desc, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { db, schema } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
 import { newId } from '../../lib/ids.ts';
+import { parseSongbook } from './import.ts';
 
 const { songs: S, songListEntries: L, songbookEntries: SB } = schema;
 export type Song = typeof S.$inferSelect;
+
+/**
+ * The public catalog is whatever KJs have imported: songs in at least one songbook. A song a
+ * singer free-adds exists only on their own list until some KJ imports it too.
+ */
+const inCatalog = sql`exists (select 1 from ${SB} where ${SB.songId} = ${S.id})`;
 
 function decadeOf(year?: number) {
   return year ? `${Math.floor(year / 10) * 10}s` : 'Unknown';
@@ -13,10 +20,10 @@ function decadeOf(year?: number) {
 export const songCatalog = {
   async search(q: string, opts: { kjId?: string; limit?: number } = {}) {
     const term = `%${q.trim()}%`;
-    const match = q.trim() ? or(like(S.title, term), like(S.artist, term)) : undefined;
+    const match = q.trim() ? or(ilike(S.title, term), ilike(S.artist, term)) : undefined;
     const base = opts.kjId
       ? db.select({ song: S }).from(S).innerJoin(SB, and(eq(SB.songId, S.id), eq(SB.kjId, opts.kjId))).where(match)
-      : db.select({ song: S }).from(S).where(match);
+      : db.select({ song: S }).from(S).where(and(inCatalog, match));
     const rows = await base.orderBy(asc(S.artist), asc(S.title)).limit(opts.limit ?? 50);
     return rows.map((r) => r.song);
   },
@@ -79,10 +86,15 @@ export const songLists = {
         .from(SB)
         .where(and(eq(SB.kjId, kjId), inArray(SB.songId, list.map((s) => s.id))));
       const ids = new Set(inBook.map((r) => r.id));
-      if (ids.size) list = list.filter((s) => ids.has(s.id));
+      list = list.filter((s) => ids.has(s.id));
     }
     if (!list.length) {
-      const [any] = await db.select().from(S).orderBy(sql`random()`).limit(1);
+      if (kjId) {
+        const [any] = await db.select({ song: S }).from(S).innerJoin(SB, eq(SB.songId, S.id))
+          .where(eq(SB.kjId, kjId)).orderBy(sql`random()`).limit(1);
+        return any?.song ?? null;
+      }
+      const [any] = await db.select().from(S).where(inCatalog).orderBy(sql`random()`).limit(1);
       return any ?? null;
     }
     return list[Math.floor(Math.random() * list.length)];
@@ -96,7 +108,7 @@ export const songLists = {
       .select({ song: S, n: sql<number>`count(*)`.as('n') })
       .from(L)
       .innerJoin(S, eq(S.id, L.songId))
-      .where(mineIds.length ? sql`${L.songId} not in ${mineIds}` : undefined)
+      .where(and(inCatalog, mineIds.length ? sql`${L.songId} not in ${mineIds}` : undefined))
       .groupBy(S.id)
       .orderBy(desc(sql`n`))
       .limit(limit);
@@ -130,20 +142,12 @@ export const songbooks = {
    * which is how most KJ software exports. Returns how many were new.
    */
   async importText(kjId: string, text: string) {
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    let added = 0;
-    let skipped = 0;
+    const { songs, skipped, lines } = parseSongbook(text);
     const before = (await songbooks.stats(kjId)).total;
-    for (const line of lines) {
-      const parts = line.split(/\t|,|\s+-\s+/).map((p) => p.trim().replace(/^"|"$/g, ''));
-      if (parts.length < 2 || /^title$/i.test(parts[0])) {
-        skipped++;
-        continue;
-      }
-      const song = await songCatalog.upsert(parts[0], parts[1], parts[2] || 'Other', Number(parts[3]) || undefined);
+    for (const input of songs) {
+      const song = await songCatalog.upsert(input.title, input.artist, input.genre, input.year);
       await songbooks.add(kjId, song.id);
     }
-    added = (await songbooks.stats(kjId)).total - before;
-    return { added, skipped, lines: lines.length };
+    return { added: (await songbooks.stats(kjId)).total - before, skipped, lines };
   },
 };

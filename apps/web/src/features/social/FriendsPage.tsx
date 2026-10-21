@@ -236,7 +236,7 @@ function SingersNearYou() {
           <h1 className="text-3xl font-extrabold">
             Singers <span className="text-gradient">near you</span>
           </h1>
-          <p className="mt-1 text-muted">Singers within {radius} miles of {loc.label}. People in Ghost Mode never show up here.</p>
+          <p className="mt-1 text-muted">Singers within about {radius} miles of {loc.label}. Distances use approximate areas. People in Ghost Mode never show up here.</p>
         </div>
         <Segmented value={radius} onChange={setRadius} options={[{ value: '5', label: '5 mi' }, { value: '10', label: '10 mi' }, { value: '20', label: '20 mi' }]} />
       </div>
@@ -246,7 +246,7 @@ function SingersNearYou() {
         </div>
         <div className="min-w-48 flex-1">
           <div className="font-semibold">Promote tonight</div>
-          <div className="text-sm text-muted">Send tonight's show to every singer within {radius} miles. Each singer gets it once per night.</div>
+          <div className="text-sm text-muted">Send tonight's show to singers within about {radius} miles of the show’s venue. Each singer gets it once per night.</div>
         </div>
         <Button variant="primary" loading={promote.isPending} onClick={() => promote.mutate(undefined)}>
           <Megaphone className="size-4" /> Promote tonight
@@ -259,7 +259,7 @@ function SingersNearYou() {
         <Pill tone="live">{out} out singing now</Pill>
       </div>
       <Card className="p-2">
-        {near.data?.map((u) => <UserRow key={u.id} user={u} sub={`${u.distanceMi} mi away${u.checkedInVenueId ? ' · out singing now' : ''}`} />)}
+        {near.data?.map((u) => <UserRow key={u.id} user={u} sub={`About ${u.distanceMi} mi away${u.checkedInVenueId ? ' · out singing now' : ''}`} />)}
         {near.data?.length === 0 && <EmptyState icon="🌙" title="No one nearby" body="Try a bigger radius." />}
       </Card>
     </div>
@@ -299,9 +299,9 @@ function FriendFinder() {
           ))}
         </Card>
       </Section>
-      <Section title="Singers within 5 miles">
+      <Section title="Singers within about 5 miles">
         <Card className="max-h-[60vh] overflow-y-auto p-2">
-          {near.data?.map((u) => <UserRow key={u.id} user={u} sub={`${u.distanceMi} mi away${u.checkedInVenueId ? ' · out singing now' : ''}`} />)}
+          {near.data?.map((u) => <UserRow key={u.id} user={u} sub={`About ${u.distanceMi} mi away${u.checkedInVenueId ? ' · out singing now' : ''}`} />)}
           {near.data?.length === 0 && <p className="p-3 text-sm text-muted">No one nearby (or they're in Ghost Mode).</p>}
         </Card>
       </Section>

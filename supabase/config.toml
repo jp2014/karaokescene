@@ -1,0 +1,35 @@
+# Supabase CLI config. Only what this project needs; see `pnpm release`.
+project_id = "karaokescene"
+
+[functions.api]
+# Bundled from apps/api by `pnpm --filter @ks/api build:edge` (git-ignored output).
+entrypoint = "./functions/api/index.js"
+# The API verifies Supabase tokens itself and serves some routes to signed-out visitors.
+verify_jwt = false
+
+# Local stack (`npx supabase start`) on its own ports so it can run beside other projects.
+[api]
+port = 55421
+
+[db]
+port = 55422
+shadow_port = 55420
+
+[studio]
+port = 55423
+
+[inbucket]
+port = 55424
+
+# Local Auth mirrors the current launch setup. Configure production separately in its dashboard.
+[auth]
+site_url = "http://localhost:5174"
+additional_redirect_urls = ["http://localhost:5173/**", "http://localhost:5174/**"]
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[analytics]
+enabled = false

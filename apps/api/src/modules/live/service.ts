@@ -5,16 +5,22 @@ import { clock } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { newId } from '../../lib/ids.ts';
+import { realtime } from '../../lib/realtime.ts';
+import { withUserLock } from '../../lib/locks.ts';
 import { hasPremium } from '../../lib/plans.ts';
 import { notifications } from '../notifications/service.ts';
 import { presence } from '../presence/service.ts';
 import { reputation } from '../reputation/service.ts';
+import { social } from '../social/service.ts';
 import { songLists } from '../songs/service.ts';
 import { venues } from '../venues/service.ts';
 
 const R = schema.songRequests;
 /** Songs a singer can have waiting for the KJ at once. */
 const MAX_PENDING = 3;
+
+/** Tell the booth and every singer's "My Night" at this venue that the submissions changed. */
+const queueChanged = (venueId: string) => realtime.publish(`venue:${venueId}`, 'live');
 
 async function submissionsFor(sessionId: string, opts: { singerId?: string } = {}) {
   const rows = await db
@@ -88,14 +94,19 @@ export const live = {
   },
 
   async submit(singer: User, songId: string, source: 'list' | 'roulette' | 'search') {
-    const checkin = (await presence.currentCheckin(singer.id)) ?? fail(400, 'Check in to a venue first');
-    const session = (await presence.activeKjSession(checkin!.venueId)) ?? fail(400, "There's no KJ running this venue right now");
     const song = (await db.query.songs.findFirst({ where: eq(schema.songs.id, songId) })) ?? notFound('Song');
-    const pending = await db.select().from(R).where(and(eq(R.kjSessionId, session!.id), eq(R.singerId, singer.id), eq(R.status, 'submitted')));
-    if (pending.length >= MAX_PENDING) fail(409, `You already have ${MAX_PENDING} songs waiting for the KJ`);
-    if (pending.some((p) => p.songId === songId)) fail(409, 'You already submitted that song');
-    const row = { id: newId('req'), kjSessionId: session!.id, singerId: singer.id, songId, source, status: 'submitted' as const, createdAt: clock.now(), decidedAt: null };
-    await db.insert(R).values(row);
+    // Checked under the singer's lock so parallel submits (or a checkout) can't slip past the limits.
+    const { row, session } = await withUserLock(singer.id, async (tx) => {
+      const checkin = (await presence.currentCheckin(singer.id, tx)) ?? fail(400, 'Check in to a venue first');
+      const session = (await presence.activeKjSession(checkin!.venueId, tx)) ?? fail(400, "There's no KJ running this venue right now");
+      const pending = await tx.select().from(R).where(and(eq(R.kjSessionId, session!.id), eq(R.singerId, singer.id), eq(R.status, 'submitted')));
+      if (pending.length >= MAX_PENDING) fail(409, `You already have ${MAX_PENDING} songs waiting for the KJ`);
+      if (pending.some((p) => p.songId === songId)) fail(409, 'You already submitted that song');
+      const row = { id: newId('req'), kjSessionId: session!.id, singerId: singer.id, songId, source, status: 'submitted' as const, createdAt: clock.now(), decidedAt: null };
+      await tx.insert(R).values(row);
+      return { row, session: session! };
+    });
+    queueChanged(session!.venueId);
     await notifications.send(session!.kjId, {
       kind: 'song-request',
       title: `${singer.ghostMode ? '👻 Ghost singer' : singer.displayName} submitted a song`,
@@ -106,7 +117,9 @@ export const live = {
   },
 
   async withdraw(singer: User, requestId: string) {
-    await db.update(R).set({ status: 'withdrawn', decidedAt: clock.now() }).where(and(eq(R.id, requestId), eq(R.singerId, singer.id), eq(R.status, 'submitted')));
+    const [req] = await db.update(R).set({ status: 'withdrawn', decidedAt: clock.now() }).where(and(eq(R.id, requestId), eq(R.singerId, singer.id), eq(R.status, 'submitted'))).returning();
+    const session = req && (await db.query.kjSessions.findFirst({ where: eq(schema.kjSessions.id, req.kjSessionId) }));
+    if (session) queueChanged(session.venueId);
   },
 
   /** KJ accepts a submission (it's in their own system now) or declines it. Pings the singer. */
@@ -114,7 +127,9 @@ export const live = {
     const req = (await db.query.songRequests.findFirst({ where: eq(R.id, requestId) })) ?? notFound('Submission');
     const session = await db.query.kjSessions.findFirst({ where: eq(schema.kjSessions.id, req!.kjSessionId) });
     if (session?.kjId !== kj.id) fail(403, 'Not your show');
-    await db.update(R).set({ status: accept ? 'accepted' : 'declined', decidedAt: clock.now() }).where(eq(R.id, requestId));
+    const [decided] = await db.update(R).set({ status: accept ? 'accepted' : 'declined', decidedAt: clock.now() }).where(and(eq(R.id, requestId), eq(R.status, 'submitted'))).returning({ id: R.id });
+    if (!decided) fail(409, 'The singer withdrew that song, or it was already handled');
+    queueChanged(session!.venueId);
     const song = await db.query.songs.findFirst({ where: eq(schema.songs.id, req!.songId) });
     await notifications.send(req!.singerId, accept
       ? { kind: 'request-accepted', title: `✅ ${kj.displayName} accepted your song`, body: `${song?.title} — you're on the list`, link: '/live' }
@@ -125,8 +140,13 @@ export const live = {
   /** KJ adds a song straight from a singer's go-to list (accepted right away). */
   async addForSinger(kj: User, singerId: string, songId: string) {
     const session = (await presence.kjSessionFor(kj.id)) ?? fail(400, 'Start your show first');
+    const singer = (await db.query.users.findFirst({ where: eq(schema.users.id, singerId) })) ?? notFound('Singer');
+    if (singer!.role !== 'singer' || (await social.hiddenIds(kj.id)).has(singerId)) notFound('Singer');
+    if ((await presence.currentCheckin(singerId))?.venueId !== session!.venueId) fail(409, "That singer isn't checked in at your show");
+    (await db.query.songs.findFirst({ where: eq(schema.songs.id, songId) })) ?? notFound('Song');
     const row = { id: newId('req'), kjSessionId: session!.id, singerId, songId, source: 'kj' as const, status: 'accepted' as const, createdAt: clock.now(), decidedAt: clock.now() };
     await db.insert(R).values(row);
+    queueChanged(session!.venueId);
     const song = await db.query.songs.findFirst({ where: eq(schema.songs.id, songId) });
     await notifications.send(singerId, { kind: 'request-accepted', title: `🎤 ${kj.displayName} picked a song for you`, body: `${song?.title} — ${song?.artist}`, link: '/live' });
     return row;
