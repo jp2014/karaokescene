@@ -1,7 +1,8 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 import { app } from '../app.ts';
 import { schema, setDb, type DB } from '../db/client.ts';
+import { SUPABASE_ROOT_CA } from '../db/supabase-ca.ts';
 import { setWaitUntil } from '../lib/defer.ts';
 import { setRealtimeTransport, supabaseBroadcast } from '../lib/realtime.ts';
 import { setMediaStore, supabaseStorage } from '../lib/storage.ts';
@@ -16,11 +17,28 @@ declare const Deno: { serve(handler: (req: Request) => Response | Promise<Respon
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
 const supabase = supabaseConfig();
-const dbUrl = process.env.SUPABASE_DB_URL;
-if (!supabase || !dbUrl) throw new Error('SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and SUPABASE_DB_URL must be set');
+if (!supabase) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
 
-// prepare: false so it also works through Supavisor's transaction pooler.
-setDb(drizzle(postgres(dbUrl, { prepare: false, max: 3 }), { schema }) as unknown as DB);
+// SUPABASE_DB_URL is a direct connection: every isolate's pool counts against Postgres's
+// max_connections, and bursts exhausted it. Deployed, the API must use DB_POOLER_URL
+// (Supavisor transaction mode, set by scripts/release.mjs); local `functions serve` has no pooler.
+const pooler = process.env.DB_POOLER_URL;
+if (!pooler && process.env.DENO_DEPLOYMENT_ID) throw new Error('DB_POOLER_URL must be set in production');
+const connectionString = pooler || process.env.SUPABASE_DB_URL;
+if (!connectionString) throw new Error('DB_POOLER_URL or SUPABASE_DB_URL must be set');
+
+// node-postgres, not postgres.js: postgres.js pipelines queries, which the transaction pooler
+// can answer out of order. The pooler's certificate chains to Supabase's own root CA, which the
+// Edge Runtime (always verifying) must be given. Idle isolates release their connections.
+const pool = new pg.Pool({
+  connectionString,
+  ssl: pooler ? { ca: SUPABASE_ROOT_CA } : undefined,
+  max: 3,
+  idleTimeoutMillis: 20_000,
+  connectionTimeoutMillis: 10_000,
+});
+pool.on('error', (err) => console.error('idle database connection failed:', err));
+setDb(drizzle(pool, { schema }) as unknown as DB);
 setRealtimeTransport(supabaseBroadcast(supabase));
 setMediaStore(supabaseStorage(supabase));
 if (typeof EdgeRuntime !== 'undefined') setWaitUntil((p) => EdgeRuntime!.waitUntil(p));

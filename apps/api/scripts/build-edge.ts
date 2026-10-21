@@ -29,6 +29,7 @@ await build({
       "import { Buffer as __Buffer } from 'node:buffer';",
       "import { setImmediate as __setImmediate, clearImmediate as __clearImmediate } from 'node:timers';",
       'const require = __createRequire(import.meta.url);',
+      'globalThis.global ??= globalThis;',
       'globalThis.process ??= __process;',
       'globalThis.Buffer ??= __Buffer;',
       'globalThis.setImmediate ??= __setImmediate;',

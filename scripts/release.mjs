@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Build first, then deploy Supabase + Cloudflare Workers Static Assets. --check builds without remote writes.
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -31,7 +31,23 @@ export function releaseConfig(env) {
   };
 }
 
-export function release({ env = process.env, checkOnly = false, run = execFileSync, writeAsset = writeFileSync } = {}) {
+/**
+ * The Edge Function's database URL: Supavisor in transaction mode (port 6543), so connections are
+ * borrowed per transaction instead of each isolate holding direct ones. `cached` is the pooler URL
+ * `supabase link` saves (session mode, no password).
+ */
+export function transactionPoolerUrl(cached, password, ref) {
+  const url = new URL(cached.trim());
+  if (!/^postgres(ql)?:$/.test(url.protocol) || !url.hostname.endsWith('.pooler.supabase.com') || url.username !== `postgres.${ref}`) {
+    throw new Error(`supabase link did not record a Supavisor pooler URL for ${ref}.`);
+  }
+  url.port = '6543';
+  // Fully encoded (incl. `$`, which the secrets env file would expand); postgres.js decodes it.
+  url.password = encodeURIComponent(password);
+  return url.href;
+}
+
+export function release({ env = process.env, checkOnly = false, run = execFileSync, writeAsset = writeFileSync, readPoolerUrl } = {}) {
   const root = resolve(import.meta.dirname, '..');
   const cfg = releaseConfig(env);
   const revision = env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
@@ -58,11 +74,22 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   }
   step(`Supabase: link ${cfg.ref} and push migrations`);
   supabase('link', '--project-ref', cfg.ref);
+  // link records the pooler only on a best-effort basis; resolve it before changing anything remote.
+  let cachedPooler;
+  try {
+    cachedPooler = (readPoolerUrl ?? (() => readFileSync(join(root, 'supabase/.temp/pooler-url'), 'utf8')))();
+  } catch {
+    throw new Error('supabase link did not record the database pooler URL (Supabase API unavailable?). Rerun the release.');
+  }
+  const poolerUrl = transactionPoolerUrl(cachedPooler, env.SUPABASE_DB_PASSWORD, cfg.ref);
   supabase('db', 'push', '--linked');
-  step('Supabase: configure API origins');
+  step('Supabase: configure API origins and database pooler');
   const dir = mkdtempSync(join(tmpdir(), 'ks-secrets-'));
   try {
-    const secrets = { APP_URL: cfg.siteUrl, ALLOWED_ORIGINS: cfg.siteUrl, SCENE_TZ: env.SCENE_TZ || 'America/Chicago' };
+    const secrets = {
+      APP_URL: cfg.siteUrl, ALLOWED_ORIGINS: cfg.siteUrl, SCENE_TZ: env.SCENE_TZ || 'America/Chicago',
+      DB_POOLER_URL: poolerUrl,
+    };
     const file = join(dir, '.env');
     writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join('\n') + '\n', { mode: 0o600 });
     supabase('secrets', 'set', '--project-ref', cfg.ref, '--env-file', file);
