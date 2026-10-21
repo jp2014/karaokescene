@@ -3,23 +3,20 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { GoogleIcon } from '~/components/BrandIcons';
-import { Button } from '~/components/ui';
 import { api, unwrap } from '~/lib/api';
 import { auth, supabase } from '~/lib/auth';
 import { qk, sessionQuery } from '~/lib/queries';
 import { homeFor } from '~/lib/session';
-import { EmailStep, RolePicker, VerifyStep, type Role } from './steps';
+import { RolePicker, type Role } from './steps';
+import { PasswordStep } from './PasswordStep';
 
-type Step = { at: 'role' } | { at: 'email'; role?: Role } | { at: 'verify'; role?: Role; email: string } | { at: 'finish' };
+type Step = { at: 'role' } | { at: 'credentials'; role?: Role } | { at: 'finish' };
 
-// The role picked before leaving for Google, so onboarding can finish when they come back.
-const PENDING_ROLE = 'ks.pendingRole';
 // Module-level so a remount mid-sign-in doesn't start a second, overlapping pass.
 let finishing = false;
 
 /**
- * Real sign-in (Supabase Auth): pick a role, then a 6-digit email code or Google. The first
+ * Real sign-in (Supabase Auth): pick a role, then create an email/password account. The first
  * sign-in creates the profile with that role; returning users just sign in.
  */
 export function RealSignIn({ next }: { next?: string }) {
@@ -58,47 +55,23 @@ export function RealSignIn({ next }: { next?: string }) {
     }
   }
 
-  // Back from Google (or reopened mid-onboarding): pick up where they left off.
+  // Reopened mid-onboarding: an authenticated user still needs to choose a role.
   useEffect(() => {
-    if (!auth.signedIn()) return;
-    const pending = sessionStorage.getItem(PENDING_ROLE) as Role | null;
-    sessionStorage.removeItem(PENDING_ROLE);
-    void afterSignIn(pending || undefined);
+    if (auth.signedIn()) void afterSignIn();
   }, []);
 
-  async function sendCode(role: Role | undefined, email: string) {
+  async function submit(role: Role | undefined, email: string, password: string) {
+    if (busy || finishing) return;
     setBusy(true);
     try {
-      await auth.sendCode(email);
-      setStep({ at: 'verify', role, email });
+      if (role) await auth.signUp(email, password);
+      else await auth.signIn(email, password);
     } catch (e) {
       toast.error((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verify(role: Role | undefined, email: string, code: string) {
-    if (finishing) return;
-    setBusy(true);
-    try {
-      await auth.verifyCode(email, code);
-    } catch {
-      toast.error('That code didn’t work. Check the latest email, or send a new code.');
       setBusy(false);
       return;
     }
     await afterSignIn(role);
-  }
-
-  async function google(role?: Role) {
-    if (role) sessionStorage.setItem(PENDING_ROLE, role);
-    try {
-      await auth.signInWithGoogle(`/welcome${next ? `?next=${encodeURIComponent(next)}` : ''}`);
-    } catch (e) {
-      sessionStorage.removeItem(PENDING_ROLE);
-      toast.error((e as Error).message);
-    }
   }
 
   if (!supabase) return <p className="mt-12 text-sm text-muted">Sign-in isn’t configured for this build.</p>;
@@ -107,10 +80,10 @@ export function RealSignIn({ next }: { next?: string }) {
     <section className="mt-12">
       <AnimatePresence mode="wait">
         {step.at === 'role' && (
-          <RolePicker key="role" onPick={(role) => setStep({ at: 'email', role })}>
+          <RolePicker key="role" onPick={(role) => setStep({ at: 'credentials', role })}>
             <p className="mt-6 text-sm text-muted">
               Already on Karaoke Scene?{' '}
-              <button className="font-semibold text-fg underline-offset-4 hover:underline" onClick={() => setStep({ at: 'email' })}>
+              <button className="font-semibold text-fg underline-offset-4 hover:underline" onClick={() => setStep({ at: 'credentials' })}>
                 Sign in
               </button>
             </p>
@@ -122,32 +95,14 @@ export function RealSignIn({ next }: { next?: string }) {
             <RolePicker onPick={(role) => afterSignIn(role)} />
           </motion.div>
         )}
-        {step.at === 'email' && (
-          <EmailStep key="email" role={step.role} busy={busy} onBack={() => setStep({ at: 'role' })} onNext={(email) => sendCode(step.role, email)}>
-            <div className="my-4 flex items-center gap-3 text-xs text-faint">
-              <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
-            </div>
-            <Button className="w-full" onClick={() => google(step.role)}>
-              <GoogleIcon className="size-5" /> Continue with Google
-            </Button>
-          </EmailStep>
-        )}
-        {step.at === 'verify' && (
-          <VerifyStep
-            key="verify"
-            email={step.email}
+        {step.at === 'credentials' && (
+          <PasswordStep
+            key={step.role ?? 'signin'}
+            role={step.role}
             busy={busy}
-            onBack={() => setStep({ at: 'email', role: step.role })}
-            onDone={(code) => verify(step.role, step.email, code)}
-            hint={() => (
-              <p className="text-center text-xs text-faint">
-                Nothing yet? Check spam, or{' '}
-                <button type="button" className="font-semibold text-muted underline" disabled={busy} onClick={() => sendCode(step.role, step.email)}>
-                  send a new code
-                </button>
-                .
-              </p>
-            )}
+            onBack={() => setStep({ at: 'role' })}
+            onSwitch={() => setStep(step.role ? { at: 'credentials' } : { at: 'role' })}
+            onSubmit={(email, password) => submit(step.role, email, password)}
           />
         )}
       </AnimatePresence>

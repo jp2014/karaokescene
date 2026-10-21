@@ -1,6 +1,6 @@
 // End-to-end check of venue onboarding in the real app (no demo): a venue account adds its own
 // venue; a KJ lists a venue and its owner later finds and claims it.
-// Usage: node scripts/e2e/real-venues.mjs   (see lib.mjs for WEB_URL / MAILPIT_URL)
+// Usage: node scripts/e2e/real-venues.mjs   (see lib.mjs for WEB_URL)
 import { apiAs, checker, launchBrowser, phone, run, signIn, web } from './lib.mjs';
 
 const browser = await launchBrowser();

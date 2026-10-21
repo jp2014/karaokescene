@@ -61,7 +61,7 @@ mock checkout) only exists locally:
 | --- | --- | --- |
 | API host | Node (`src/hosts/node.ts`) | Supabase Edge Function `api` (`src/hosts/edge.ts`) |
 | Database | PGlite, or `DATABASE_URL` | Supabase Postgres (`app` schema, not exposed via the Data API) |
-| Sign-in | Demo personas (+ Supabase if configured) | Supabase Auth: email code + Google |
+| Sign-in | Demo personas (+ Supabase if configured) | Supabase Auth: email/password |
 | Realtime | In-process bus over SSE | Supabase Realtime (private broadcast channels) |
 | Media | `apps/api/data/media` | Supabase Storage (`media` bucket) |
 | Scheduled jobs | 60s timer | pg_cron (every 5 min) |
@@ -73,7 +73,7 @@ To try real Supabase locally, see `apps/api/.env.example`.
 ## Production setup
 
 [Deployment setup and operations](docs/deployment.md) covers the GitHub `production` environment,
-Cloudflare Worker, Supabase Auth/SMTP, and the exact secrets and variables to configure.
+Cloudflare Worker, Supabase Auth, and the exact secrets and variables to configure.
 
 `.github/workflows/pipeline.yml` runs on pull requests and pushes to `main`:
 
@@ -101,7 +101,7 @@ The old Netlify configuration is removed; an existing Netlify site must be disab
 
 The stack uses ports 55421 (API), 55422 (Postgres), 55423 (Studio), 55424 (Mailpit).
 `pnpm exec supabase start` requires Docker. The project's Auth config is for local development;
-production URLs and Google credentials must be set separately before deployment.
+production URLs and Confirm email OFF must be set separately before deployment.
 
 Run the API with `DEMO=off`, `DATABASE_URL` pointing at local Supabase, `DATABASE_MIGRATE=off`
 (if the CLI applied migrations), `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
@@ -125,7 +125,7 @@ node scripts/e2e/edge-smoke.mjs
 ```
 
 Keep `AUTH_JWT_ISSUER` unset in hosted production; there the default Supabase URL matches the token issuer.
-The smoke check validates real OTP, onboarding, and absence of demo endpoints through the Edge URL.
+The smoke check validates real password authentication, onboarding, and absence of demo endpoints through the Edge URL.
 
 Focused persistence regressions (fresh in-memory database, no Docker required):
 
@@ -177,7 +177,7 @@ photo and menu uploads (Storage), promo post scheduling, GPS.
 - Payments (Singer Plus, KJ Pro, Venue Premier).
 - Automated publishing to Facebook/Instagram (replaced with manual sharing).
 
-**Real onboarding:** email code or Google → explicit role selection → profile. Venue owners can add their own
+**Real onboarding:** role selection → email/password signup → profile. Venue owners can add their own
 venue or claim an unclaimed KJ listing, with an ownership declaration. Claims preserve the listing’s reputation
 and notify its listing KJ. This is self-serve; ownership is not independently verified.
 

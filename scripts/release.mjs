@@ -53,7 +53,7 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   invoke('pnpm', ['--filter', '@ks/web', 'build'], { env: webEnv });
   writeAsset(join(root, 'apps/web/dist/release.json'), JSON.stringify({ revision, apiUrl: `${cfg.supabaseUrl}/functions/v1/api` }) + '\n');
   if (checkOnly) {
-    console.log('\n✓ Release check passed. No remote changes made. Auth, SMTP and account access still require verification.');
+    console.log('\n✓ Release check passed. No remote changes made. Auth configuration and account access still require verification.');
     return;
   }
   step(`Supabase: link ${cfg.ref} and push migrations`);

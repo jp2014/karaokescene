@@ -1,8 +1,8 @@
-// Local Supabase Edge Function smoke check, including a real Auth email code.
+// Local Supabase Edge Function smoke check, including real email/password Auth.
 // Needs `supabase start` and a built API bundle. Never prints keys or access tokens.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { latestCode, run } from './lib.mjs';
+import { run, testPassword } from './lib.mjs';
 
 const status = JSON.parse(execFileSync('pnpm', ['exec', 'supabase', 'status', '-o', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
 const base = status.API_URL;
@@ -18,8 +18,10 @@ assert.equal((await call(`${api}/promo/upgrade`, { method: 'POST', body: { on: t
 console.log('✓ production Edge URL works; demo sign-in and mock upgrade are absent');
 
 const email = `edge-${run}@example.com`;
-assert.equal((await call(`${base}/auth/v1/otp`, { method: 'POST', body: { email, create_user: true } })).status, 200);
-const verified = await call(`${base}/auth/v1/verify`, { method: 'POST', body: { email, token: await latestCode(email), type: 'email' } });
+const created = await call(`${base}/auth/v1/signup`, { method: 'POST', body: { email, password: testPassword } });
+assert.equal(created.status, 200);
+assert.ok(created.body.access_token, 'Signup must issue a session without email confirmation');
+const verified = await call(`${base}/auth/v1/token?grant_type=password`, { method: 'POST', body: { email, password: testPassword } });
 assert.equal(verified.status, 200);
 const token = verified.body.access_token;
 assert.ok(token);
@@ -30,4 +32,4 @@ const session = await call(`${api}/profiles/session`, { token });
 assert.equal(session.body.status, 'ready');
 assert.equal(session.body.me.role, 'singer');
 assert.equal(session.body.me.isPremium, false);
-console.log('✓ real Supabase OTP → Edge token verification → role onboarding → free profile');
+console.log('✓ real Supabase password sign-in → Edge token verification → role onboarding → free profile');

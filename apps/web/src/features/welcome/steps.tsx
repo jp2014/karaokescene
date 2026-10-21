@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Disc3, Mail, MailCheck, Mic2, Store } from 'luci
 import { useState, type ReactNode } from 'react';
 import { Button, cx } from '~/components/ui';
 
-/** The first-run steps (pick a role, email, verify), shared by real sign-in and the local demo. */
+/** Shared role picker and card; the email/code steps below are for the local demo. */
 export type Role = 'singer' | 'kj' | 'venue';
 
 export const ROLES: { role: Role; icon: typeof Mic2; color: string; label: string; blurb: string }[] = [
@@ -63,7 +63,7 @@ export function StepCard({ children, onBack, title, icon }: { children: ReactNod
   );
 }
 
-/** `role` is unset for a returning user signing in; `children` render below the form (e.g. Google). */
+/** Demo email step. `role` is unset for a returning user. */
 export function EmailStep({ role, busy, onBack, onNext, children }: { role?: Role; busy?: boolean; onBack: () => void; onNext: (email: string) => void; children?: ReactNode }) {
   const [email, setEmail] = useState('');
   const [legit, setLegit] = useState(false);

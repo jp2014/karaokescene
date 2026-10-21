@@ -152,7 +152,7 @@ export function AboutPage() {
 
         <section className="my-24 text-center">
           <h2 className="text-4xl font-extrabold">{DEMO ? 'Ready to see it?' : 'Ready to join?'}</h2>
-          <p className="mt-3 text-muted">{DEMO ? 'Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.' : 'Sign in with your email or Google and find tonight’s karaoke.'}</p>
+          <p className="mt-3 text-muted">{DEMO ? 'Jump in as a singer, a KJ or a venue. The demo is loaded with Omaha’s (fictional) scene.' : 'Create an account with your email and password and find tonight’s karaoke.'}</p>
           <Link to="/welcome">
             <Button variant="primary" size="lg" className="mt-6">
               {DEMO ? 'Open the demo' : 'Get started'}

@@ -87,6 +87,15 @@
        */
       const ROUNDS = [
         {
+          id: 'password-auth', title: 'Email and password sign-in', date: 'Oct 21, 2026',
+          questions: [['Launch setup', 'Email confirmation and Google are disabled for now. Enable Email signup and turn Confirm email off in the hosted Supabase dashboard.']],
+          sections: [{ name: 'Accounts', changes: [
+            { id: 'password-signup', title: 'Create an account without an email code', did: 'Choose a role, enter an email and password, and confirm the password. Venue owners still declare that they are authorized to manage the business. Supabase creates the session immediately when email confirmation is off.', shots: [['before','signup'],['after','signup']], try: '/welcome' },
+            { id: 'password-signin', title: 'Returning users sign in with a password', did: 'Returning users enter their email and password. Google sign-in is hidden. The development demo keeps its existing persona flow.', shots: [['before','signin'],['after','signin']], try: '/welcome' },
+          ] }],
+          unchanged: 'The API still verifies Supabase sessions and creates profiles through role onboarding. Database and Cloudflare deployment order are unchanged. Password recovery is not available in the app yet.',
+        },
+        {
           id: 'go-real', title: 'Real accounts and a real backend', date: 'Oct 20, 2026',
           questions: [['Production setup', 'Supabase backend + Cloudflare Workers Static Assets. Production starts empty. Create the hosted project and configure email delivery before launch.']],
           sections: [

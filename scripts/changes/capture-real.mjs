@@ -1,7 +1,7 @@
 // Real-mode evidence for /changes/go-real. Requires local Supabase + real-mode web on :5174.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
-import { latestCode, phone, run, signIn, web } from '../e2e/lib.mjs';
+import { testPassword, phone, run, signIn, web } from '../e2e/lib.mjs';
 
 const out = 'apps/web/changes/go-real/after';
 mkdirSync(out, { recursive: true });
@@ -22,10 +22,10 @@ try {
   await page.getByRole('button', { name: /Continue as a singer/i }).click();
   const email = `changes-${run}@example.com`;
   await page.fill('input[type=email]', email);
-  await page.getByRole('button', { name: /Email me a code/ }).click();
-  await page.fill('input[inputmode=numeric]', await latestCode(email));
+  await page.getByLabel('Password', { exact: true }).fill(testPassword);
+  await page.getByLabel('Confirm password', { exact: true }).fill(testPassword);
   await shot(page, 'welcome-verify');
-  await page.getByRole('button', { name: /Verify/ }).click();
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
   await page.waitForURL((u) => !u.pathname.startsWith('/welcome'));
   await page.goto(`${web}/songs`, { waitUntil: 'networkidle' });
   await page.getByText('Unlock with', { exact: false }).first().click();

@@ -34,26 +34,20 @@ export const auth = {
     override = o;
   },
 
-  /** Email sign-in, step 1: send a 6-digit code (creates the account on first use). */
-  async sendCode(email: string) {
+  /** Creates a real account. Confirm email is disabled for the current launch setup. */
+  async signUp(email: string, password: string) {
     if (!supabase) throw new Error('Sign-in is not configured');
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
+    if (!data.session) throw new Error('Check your email to confirm your account, then sign in.');
+    accessToken = data.session.access_token;
   },
 
-  /** Email sign-in, step 2: the code from the email. */
-  async verifyCode(email: string, code: string) {
+  async signIn(email: string, password: string) {
     if (!supabase) throw new Error('Sign-in is not configured');
-    const { data, error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    accessToken = data.session?.access_token ?? accessToken;
-  },
-
-  /** Google sign-in: leaves the app and comes back to `returnTo` (a path on this site). */
-  async signInWithGoogle(returnTo: string) {
-    if (!supabase) throw new Error('Sign-in is not configured');
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: new URL(returnTo, window.location.origin).href } });
-    if (error) throw error;
+    accessToken = data.session.access_token;
   },
 
   async signOut() {

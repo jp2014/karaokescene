@@ -38,30 +38,31 @@ The service-role key is injected into Supabase Edge Runtime by Supabase. It is n
 The release config rejects secret/service-role keys in `SUPABASE_ANON_KEY`.
 For a custom domain, configure it on the Worker separately; changing `SITE_URL` alone does not attach DNS.
 
-### Supabase Auth and email
+### Supabase Auth
 
-Configure once in the production dashboard:
+Configure in the production dashboard:
 
-- Site URL: the exact `SITE_URL`; allow `<SITE_URL>/welcome` as an OAuth redirect.
-- Email OTP: six digits. Paste `supabase/templates/email-code.html` into the confirmation and magic-link
-  email templates. They must contain `{{ .Token }}`, rather than a link-only message.
-- Configure custom SMTP for users outside your project team. The built-in sender is for testing.
-- Enable Google using its OAuth client credentials. Its Google callback URL is
-  `https://<SUPABASE_PROJECT_REF>.supabase.co/auth/v1/callback`.
-- Leave Firebase unset for launch. Paid plans remain coming soon.
+- Keep the Email provider and new-user signup enabled; turn **Confirm email OFF**.
+- Set the minimum password length to 8 characters (the frontend requires at least 8 for new accounts).
+- Site URL: the exact `SITE_URL`.
+- Leave Google disabled for now. The app offers email/password only.
 
-Do not run `supabase config push` against production using this repository's local Auth URLs.
+Routine signup and sign-in do not send email. Custom templates and SMTP are not needed for this setup.
+Password recovery is not implemented in the app yet. Accounts previously created through OTP have no
+password until one is set through a recovery/admin process; creating the same account again does not
+set its password. Use a new email for the first password signup if you have only disposable test accounts.
+
+Do not run `supabase config push` against production using this repository's local URLs.
 Keep `AUTH_JWT_ISSUER` unset in production; the override is for local Docker verification only.
-OAuth-provider credentials, SMTP and remote dashboard configuration are not changed by routine releases.
+Remote dashboard Auth configuration is not changed by routine releases.
 
 ## Pull request verification
 
 The `Verify` job has no production secrets. It installs tools pinned by the lockfile, runs TypeScript and
 focused regression checks, builds the Edge Function, then starts a fresh local Supabase stack on the
 GitHub runner. This applies every migration, including Storage, Realtime and pg_cron setup.
-It builds the real frontend against that stack and exercises real email OTP, all roles, owner creation,
+It builds the real frontend against that stack and exercises real email/password signup and sign-in, all roles, owner creation,
 venue claims, and authenticated Edge database access. It finishes with a Workers deployment dry run.
-Google credentials in that job are local placeholders; this does not test external Google OAuth.
 The temporary stack is stopped and discarded even when verification fails.
 
 ## Production release

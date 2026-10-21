@@ -15,7 +15,7 @@ const env = {
   ...process.env, DEMO: 'off', PORT: port, DATABASE_URL: local.DB_URL, DATABASE_MIGRATE: 'off',
   SUPABASE_URL: local.API_URL, SUPABASE_SERVICE_ROLE_KEY: local.SERVICE_ROLE_KEY,
   VITE_DEMO: 'false', VITE_SUPABASE_URL: local.API_URL, VITE_SUPABASE_ANON_KEY: local.ANON_KEY,
-  WEB_URL: web, MAILPIT_URL: process.env.MAILPIT_URL || 'http://127.0.0.1:55424',
+  WEB_URL: web,
 };
 // Browser tests call the Node host's same-origin API; never inherit a production API URL.
 delete env.VITE_API_URL;

@@ -12,6 +12,8 @@ try {
   await page.goto(`${site}/welcome`, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Continue as a singer/i }).click();
   await page.locator('input[type=email]').waitFor();
+  assert.equal(await page.locator('input[type=password]').count(), 2);
+  assert.equal(await page.getByRole('button', { name: /Google/ }).count(), 0);
   // Runs in the real site's browser origin, so this verifies CORS as well as connectivity.
   const result = await page.evaluate(async (base) => {
     const res = await fetch(`${base}/discover/venues?lat=41.2565&lng=-95.9345&radiusMi=1`);
