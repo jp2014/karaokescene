@@ -28,11 +28,13 @@ export type NotificationKind =
 
 export const notifications = {
   /** Store it for the in-app list, nudge any open app over Realtime, and push to their devices. */
-  async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }) {
-    const row = { id: newId('ntf'), userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: clock.now() };
-    await db.insert(schema.notifications).values(row);
+  async send(userId: string, n: { kind: NotificationKind; title: string; body?: string; link?: string }, dedupeId?: string) {
+    const row = { id: dedupeId ?? newId('ntf'), userId, kind: n.kind, title: n.title, body: n.body ?? '', link: n.link ?? null, createdAt: clock.now() };
+    const inserted = await db.insert(schema.notifications).values(row).onConflictDoNothing().returning({ id: schema.notifications.id });
+    if (!inserted.length) return false;
     realtime.publish(`user:${userId}`, 'notification', { id: row.id, kind: row.kind });
     defer('push', () => push.send(userId, row));
+    return true;
   },
 
   async list(userId: string) {

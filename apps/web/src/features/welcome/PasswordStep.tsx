@@ -8,19 +8,25 @@ export function PasswordStep({ role, busy, onBack, onSwitch, onSubmit }: {
   busy: boolean;
   onBack: () => void;
   onSwitch: () => void;
-  onSubmit: (email: string, password: string) => void;
+  onSubmit: (email: string, password: string, displayName?: string) => void;
 }) {
   const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [legit, setLegit] = useState(false);
   const signup = !!role;
   const label = ROLES.find((r) => r.role === role)?.label.toLowerCase();
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.length > 0
-    && (!signup || (password.length >= 8 && password === confirm)) && (role !== 'venue' || legit);
+    && (!signup || (displayName.trim().length > 0 && password.length >= 8 && password === confirm)) && (role !== 'venue' || legit);
   return (
     <StepCard onBack={onBack} title={signup ? `Create ${label === 'kj' ? 'KJ' : label} account` : 'Sign in'} icon={<LockKeyhole className="size-5" />}>
-      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); if (valid && !busy) onSubmit(email.trim(), password); }}>
+      <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); if (valid && !busy) onSubmit(email.trim(), password, signup ? displayName.trim() : undefined); }}>
+        {signup && <label className="block space-y-1.5">
+          <span className="text-xs font-semibold tracking-wide text-muted uppercase">Public display name</span>
+          <input aria-label="Public display name" autoComplete="nickname" required maxLength={40} value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full" />
+          <span className="text-xs text-faint">Choose the name people will see on your profile.</span>
+        </label>}
         <label className="block space-y-1.5">
           <span className="text-xs font-semibold tracking-wide text-muted uppercase">{role === 'venue' ? 'Business email' : 'Email'}</span>
           <input type="email" autoComplete="email" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="w-full" />

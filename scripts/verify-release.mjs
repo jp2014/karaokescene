@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export async function verifyRelease(kind, { apiUrl, siteUrl, revision, fetchImpl = fetch }) {
+export async function verifyRelease(kind, { apiUrl, siteUrl, revision, supabaseUrl, anonKey, fetchImpl = fetch }) {
   const get = async (url, headers = {}) => {
     const res = await fetchImpl(url, { headers: { 'cache-control': 'no-cache', ...headers }, signal: AbortSignal.timeout(10_000) });
     assert.equal(res.status, 200, `${new URL(url).pathname} returned ${res.status}`);
@@ -16,6 +16,11 @@ export async function verifyRelease(kind, { apiUrl, siteUrl, revision, fetchImpl
   assert.equal(status.revision, revision, 'API is still serving a different release');
   const discovery = await (await get(`${apiUrl}/discover/venues?lat=41.2565&lng=-95.9345&radiusMi=1`)).json();
   assert.ok(Array.isArray(discovery.venues), 'Discovery must successfully read the database');
+  const auth = await (await get(`${supabaseUrl}/auth/v1/settings`, { apikey: anonKey })).json();
+  assert.equal(auth.mailer_autoconfirm, true, 'Auth: turn Confirm email OFF');
+  assert.equal(auth.disable_signup, false, 'Auth: enable new-user signup');
+  assert.equal(auth.external?.email, true, 'Auth: enable the Email provider');
+  assert.equal(auth.external?.google, false, 'Auth: leave Google disabled for this release');
   if (kind === 'web') {
     const deployed = await (await get(`${siteUrl}/release.json?revision=${revision}`)).json();
     assert.equal(deployed.revision, revision, 'Frontend is still serving a different release');
@@ -37,9 +42,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const kind = process.argv[2];
     assert.ok(['api', 'web'].includes(kind), 'Usage: node scripts/verify-release.mjs <api|web>');
-    const { SITE_URL, SUPABASE_PROJECT_REF, RELEASE_SHA } = process.env;
-    assert.ok(SITE_URL && SUPABASE_PROJECT_REF && RELEASE_SHA, 'Missing release verification settings');
-    const settings = { apiUrl: `https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/api`, siteUrl: new URL(SITE_URL).origin, revision: RELEASE_SHA };
+    const { SITE_URL, SUPABASE_PROJECT_REF, SUPABASE_ANON_KEY, RELEASE_SHA } = process.env;
+    assert.ok(SITE_URL && SUPABASE_PROJECT_REF && SUPABASE_ANON_KEY && RELEASE_SHA, 'Missing release verification settings');
+    const supabaseUrl = `https://${SUPABASE_PROJECT_REF}.supabase.co`;
+    const settings = { apiUrl: `${supabaseUrl}/functions/v1/api`, siteUrl: new URL(SITE_URL).origin, revision: RELEASE_SHA, supabaseUrl, anonKey: SUPABASE_ANON_KEY };
     for (let attempt = 0; ; attempt++) {
       try { await verifyRelease(kind, settings); break; }
       catch (error) {

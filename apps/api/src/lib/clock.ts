@@ -38,9 +38,23 @@ export function localParts(ms: number) {
 
 /** Epoch ms for a local wall-clock time `minutes` after local midnight, `dayOffset` days from `fromMs`. */
 export function localTimeToMs(fromMs: number, dayOffset: number, minutes: number) {
-  const here = localParts(fromMs);
-  const midnight = fromMs - (here.minutes * 60_000 + (fromMs % 60_000));
-  return midnight + dayOffset * 86_400_000 + minutes * 60_000;
+  const target = Date.parse(`${localParts(fromMs).date}T00:00:00Z`) + (dayOffset * 1440 + minutes) * 60_000;
+  const wallMs = (ms: number) => {
+    const parts = localParts(ms);
+    return Date.parse(`${parts.date}T00:00:00Z`) + parts.minutes * 60_000;
+  };
+  // Sample both sides of a transition to find the offsets valid near the target date.
+  const offsets = new Set<number>();
+  for (let hours = -48; hours <= 48; hours += 6) {
+    const sample = target + hours * 3_600_000;
+    offsets.add(wallMs(sample) - sample);
+  }
+  const candidates = [...offsets].map((offset) => target - offset).sort((a, b) => a - b);
+  // Compatible disambiguation: first occurrence in a fall fold; move forward by the
+  // missing interval in a spring gap (02:30 becomes 03:30), including overnight times.
+  const exact = candidates.find((ms) => wallMs(ms) === target);
+  if (exact !== undefined) return exact;
+  return candidates.filter((ms) => wallMs(ms) > target).sort((a, b) => wallMs(a) - wallMs(b))[0]!;
 }
 
 export function addDays(date: string, days: number) {

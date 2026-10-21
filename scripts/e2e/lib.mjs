@@ -5,11 +5,12 @@ export const run = Date.now().toString(36);
 export const testPassword = 'Scene-test-password-42!';
 
 /** Through the welcome screens: `role` signs up (singer | KJ | venue); without it, signs in. Returns where it landed. */
-export async function signIn(page, { role, email, password = testPassword }) {
+export async function signIn(page, { role, email, password = testPassword, displayName = `Test ${role}` }) {
   await page.goto(`${web}/welcome`, { waitUntil: 'networkidle' });
   if (role) await page.getByRole('button', { name: new RegExp(`Continue as an? ${role}`, 'i') }).click();
   else await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.fill('input[type=email]', email);
+  if (role) await page.getByLabel('Public display name', { exact: true }).fill(displayName);
   if (role === 'venue') await page.check('input[type=checkbox]');
   await page.getByLabel('Password', { exact: true }).fill(password);
   if (role) await page.getByLabel('Confirm password', { exact: true }).fill(password);

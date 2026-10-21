@@ -71,7 +71,15 @@ export const venues = {
 
   async linkKj(kjId: string, venueId: string, linked: boolean) {
     if (linked) await db.insert(schema.kjVenueLinks).values({ kjId, venueId }).onConflictDoNothing();
-    else await db.delete(schema.kjVenueLinks).where(and(eq(schema.kjVenueLinks.kjId, kjId), eq(schema.kjVenueLinks.venueId, venueId)));
+    else await db.transaction(async (tx) => {
+      const nights = await tx.select({ id: N.id }).from(N).where(and(eq(N.kjId, kjId), eq(N.venueId, venueId)));
+      if (nights.length) await tx.delete(schema.promoPosts).where(and(
+        eq(schema.promoPosts.authorId, kjId), eq(schema.promoPosts.status, 'scheduled'),
+        inArray(schema.promoPosts.sourceKey, nights.map((night) => `night:${night.id}`)),
+      ));
+      await tx.delete(N).where(and(eq(N.kjId, kjId), eq(N.venueId, venueId)));
+      await tx.delete(L).where(and(eq(L.kjId, kjId), eq(L.venueId, venueId)));
+    });
   },
 
   /** A KJ's "My Venues": each venue with their nights there, Auto Promote and claim status. */

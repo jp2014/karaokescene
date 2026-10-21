@@ -7,6 +7,7 @@ import { api, unwrap } from '~/lib/api';
 import { auth, supabase } from '~/lib/auth';
 import { qk, sessionQuery } from '~/lib/queries';
 import { homeFor } from '~/lib/session';
+import { returnPath } from '~/lib/return-path';
 import { RolePicker, type Role } from './steps';
 import { PasswordStep } from './PasswordStep';
 
@@ -26,12 +27,13 @@ export function RealSignIn({ next }: { next?: string }) {
   const [busy, setBusy] = useState(false);
 
   async function enter(role: Role) {
-    if (next && next !== '/') navigate({ href: next });
+    const path = returnPath(next);
+    if (path && path !== '/') navigate({ href: path });
     else navigate({ to: homeFor(role) });
   }
 
   /** After any successful sign-in: go in, or create the profile first. */
-  async function afterSignIn(role?: Role) {
+  async function afterSignIn(role?: Role, displayName?: string) {
     if (finishing) return;
     finishing = true;
     setBusy(true);
@@ -42,7 +44,7 @@ export function RealSignIn({ next }: { next?: string }) {
       if (session.status === 'ready') return await enter(session.me.role);
       if (session.status === 'signed-out') throw new Error('Sign-in didn’t go through. Please try again.');
       if (!role) return setStep({ at: 'finish' });
-      const me = await unwrap(api.profiles.onboard.$post({ json: { role } }));
+      const me = await unwrap(api.profiles.onboard.$post({ json: { role, displayName } }));
       // Ready now: seed the session so the route guard lets them straight in.
       qc.setQueryData(qk.session, { status: 'ready', email: session.email, me });
       toast.success(`Welcome to Karaoke Scene, ${me.displayName}!`);
@@ -60,18 +62,18 @@ export function RealSignIn({ next }: { next?: string }) {
     if (auth.signedIn()) void afterSignIn();
   }, []);
 
-  async function submit(role: Role | undefined, email: string, password: string) {
+  async function submit(role: Role | undefined, email: string, password: string, displayName?: string) {
     if (busy || finishing) return;
     setBusy(true);
     try {
-      if (role) await auth.signUp(email, password);
+      if (role) await auth.signUp(email, password, displayName);
       else await auth.signIn(email, password);
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);
       return;
     }
-    await afterSignIn(role);
+    await afterSignIn(role, displayName);
   }
 
   if (!supabase) return <p className="mt-12 text-sm text-muted">Sign-in isn’t configured for this build.</p>;
@@ -102,7 +104,7 @@ export function RealSignIn({ next }: { next?: string }) {
             busy={busy}
             onBack={() => setStep({ at: 'role' })}
             onSwitch={() => setStep(step.role ? { at: 'credentials' } : { at: 'role' })}
-            onSubmit={(email, password) => submit(step.role, email, password)}
+            onSubmit={(email, password, displayName) => submit(step.role, email, password, displayName)}
           />
         )}
       </AnimatePresence>

@@ -19,6 +19,7 @@ try {
       await page.goto(`${web}/welcome`, { waitUntil: 'networkidle' });
       await page.getByRole('button', { name: /Continue as a singer/i }).click();
       await page.fill('input[type=email]', email);
+      await page.getByLabel('Public display name', { exact: true }).fill('Stage Singer');
       await page.getByLabel('Password', { exact: true }).fill(testPassword);
       await page.getByLabel('Confirm password', { exact: true }).fill('does-not-match');
       check(await page.getByRole('button', { name: 'Create account', exact: true }).isDisabled(), 'mismatched passwords cannot create an account');
@@ -27,6 +28,7 @@ try {
     check(landed === home, `new ${role} signs up without email confirmation and lands on ${home} (got ${landed})`);
     const { body: session } = await apiAs(page, '/profiles/session');
     check(session.status === 'ready' && session.me.role === role.toLowerCase(), `${role} profile created with role ${role.toLowerCase()}`);
+    check(session.me.displayName === `Test ${role}` && !session.me.handle.includes(run), `${role} public name comes from signup, not email`);
     check(emailRequests.length === 0, `${role} signup does not request an email code or OAuth`);
     if (role === 'singer') {
       const badCtx = await phone(browser);
@@ -45,6 +47,9 @@ try {
       await page.evaluate(() => localStorage.clear());
       const again = await signIn(page, { email });
       check(again === '/', `returning singer signs in without picking a role (landed ${again})`);
+      await page.goto(`${web}/welcome?next=${encodeURIComponent('https://evil.example/login')}`, { waitUntil: 'networkidle' });
+      await page.waitForURL((u) => u.pathname !== '/welcome');
+      check(new URL(page.url()).origin === new URL(web).origin, 'external auth return path cannot leave the app');
     }
     await ctx.close();
   }

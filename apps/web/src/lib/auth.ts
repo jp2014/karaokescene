@@ -35,9 +35,9 @@ export const auth = {
   },
 
   /** Creates a real account. Confirm email is disabled for the current launch setup. */
-  async signUp(email: string, password: string) {
+  async signUp(email: string, password: string, displayName?: string) {
     if (!supabase) throw new Error('Sign-in is not configured');
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name: displayName } } });
     if (error) throw error;
     if (!data.session) throw new Error('Check your email to confirm your account, then sign in.');
     accessToken = data.session.access_token;

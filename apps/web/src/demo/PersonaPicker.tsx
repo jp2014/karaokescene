@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '~/components/ui';
 import { EmailStep, RolePicker, VerifyStep, type Role } from '~/features/welcome/steps';
 import { homeFor } from '~/lib/session';
+import { returnPath } from '~/lib/return-path';
 import { signInAs, useDemoAccounts } from './api';
 import { DebugPanel } from './DebugPanel';
 
@@ -27,7 +28,8 @@ export function PersonaPicker({ next }: { next?: string }) {
     try {
       const user = await signInAs(PERSONA[role], qc);
       toast.success(`Welcome, ${user.displayName}!`, { description: 'Demo: you’re signed in as the sample account for this role.' });
-      if (next && next !== '/') navigate({ href: next });
+      const path = returnPath(next);
+      if (path && path !== '/') navigate({ href: path });
       else navigate({ to: homeFor(user.role) });
     } finally {
       setBusy(false);

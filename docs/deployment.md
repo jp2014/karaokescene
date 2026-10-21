@@ -55,6 +55,8 @@ set its password. Use a new email for the first password signup if you have only
 Do not run `supabase config push` against production using this repository's local URLs.
 Keep `AUTH_JWT_ISSUER` unset in production; the override is for local Docker verification only.
 Remote dashboard Auth configuration is not changed by routine releases.
+The release checks public Auth settings and stops before publishing the frontend if email/signup,
+Confirm email, or Google differs from this launch configuration. Password length remains a dashboard check.
 
 ## Pull request verification
 
@@ -71,7 +73,7 @@ Only verified `main` commits reach the `production` job. Both artifacts build be
 
 1. Push pending Supabase migrations. Never reset the production database or run demo seeds.
 2. Configure the API's site origin/timezone and deploy the bundled Edge Function.
-3. Verify its **compiled-in** Git SHA, CORS and a read-only database-backed discovery response.
+3. Verify its **compiled-in** Git SHA, CORS, database-backed discovery and required Auth settings.
 4. Upload the frontend to Workers Static Assets with SPA routing and no server-side Worker script.
 5. Check frontend release metadata, root/client routes and referenced JS/CSS, then run a read-only
    browser check that renders the app, opens the email form and reads discovery through the real API.
@@ -103,3 +105,48 @@ installs the matching browser with `pnpm exec playwright-core install --with-dep
 
 References: [Supabase CI deployment](https://supabase.com/docs/guides/deployment/managing-environments),
 [Cloudflare SPA hosting](https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/).
+
+## Disputed venue claims
+
+Claims are self-serve: the authorization checkbox is an attestation, not proof of ownership. The
+listing KJ is notified. Investigate reports before changing ownership; preserve the venue/placeholder
+user IDs so schedules, visits and venue history remain attached. A claim merges the claimant's old
+profile into that placeholder; this procedure releases ownership, it cannot reconstruct that old profile.
+
+For a confirmed impersonation, an administrator must:
+
+1. Record the venue ID, placeholder owner ID and current `auth_id`, plus relevant claim notifications.
+   Export the affected records and investigate changes to coupons, specials, schedules and profile fields.
+2. Ban/delete the impersonating **Supabase Auth** account and revoke its refresh sessions. Existing
+   access JWTs remain valid until expiry when verified locally. Keep the claim locked until the project's
+   maximum access-token lifetime has elapsed after revocation; do not just clear `auth_id` immediately.
+   During an urgent incident, restrict API access at the platform while tokens expire.
+3. After that interval, use the SQL editor transaction below with the investigated IDs. It checks that
+   the listing still belongs to that account. Retain all listing relationships and manually repair any
+   unauthorized content from the audit/export; financial or coupon actions need separate investigation.
+   Review notifications, friendships, favorites and praise as well as content, especially changes since
+   `claimed_at`. The claim also carries over the claimant's earlier personal records, so inspect those
+   too; the merged account's social history is not automatically the legitimate operator's history.
+4. Have the verified operator create a fresh venue account and claim the released listing. Verify their
+   access and the listing KJ's schedule. Do not reuse the banned account or hand off its password.
+
+```sql
+-- Replace all three UUID/text values after investigation; execute as an administrator.
+begin;
+do $$
+declare
+  target_venue text := 'REPLACE_VENUE_ID';
+  target_owner text := 'REPLACE_PLACEHOLDER_USER_ID';
+  revoked_auth uuid := '00000000-0000-0000-0000-000000000000';
+begin
+  perform 1 from app.venues where id = target_venue and owner_id = target_owner and claimed for update;
+  if not found then raise exception 'Venue ownership changed; investigate again'; end if;
+  perform 1 from app.users where id = target_owner and auth_id = revoked_auth for update;
+  if not found then raise exception 'Auth identity changed; investigate again'; end if;
+  -- Never deliver the legitimate operator's future pushes to the impersonator's devices.
+  delete from app.push_tokens where user_id = target_owner;
+  update app.users set auth_id = null where id = target_owner;
+  update app.venues set claimed = false, claimed_at = null where id = target_venue;
+end $$;
+commit;
+```

@@ -44,7 +44,7 @@ export const profiles = {
     const existing = await profiles.byAuthId(identity.authId);
     if (existing) return existing;
     const fallback = { singer: 'New Singer', kj: 'New KJ', venue: 'New Venue' }[input.role];
-    const displayName = (input.displayName?.trim() || identity.name || identity.email?.split('@')[0] || fallback).slice(0, 40);
+    const displayName = (input.displayName?.trim() || identity.name?.trim() || fallback).slice(0, 40);
     const base = slugify(displayName) || input.role;
     // A concurrent first request may create the row first; the handle may already be taken.
     for (let attempt = 0; attempt < 5; attempt++) {

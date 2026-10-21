@@ -3,7 +3,7 @@ import { db, schema, type DB } from '../../db/client.ts';
 import { cardsById, toCard, type UserCard } from '../../lib/cards.ts';
 import { clock, localParts } from '../../lib/clock.ts';
 import type { User } from '../../lib/context.ts';
-import { ARRIVE_RADIUS_MI, distanceMi, LEAVE_RADIUS_MI, type LatLng } from '../../lib/geo.ts';
+import { ARRIVE_RADIUS_MI, distanceMi, LEAVE_RADIUS_MI, nearbyArea, type LatLng } from '../../lib/geo.ts';
 import { fail, notFound } from '../../lib/http.ts';
 import { withUserLock } from '../../lib/locks.ts';
 import { hasPremium } from '../../lib/plans.ts';
@@ -279,8 +279,8 @@ export const presence = {
     const out: (UserCard & { distanceMi: number; checkedInVenueId: string | null })[] = [];
     for (const u of rows) {
       if (u.lat == null || u.lng == null || hidden.has(u.id) || u.id === viewer.id) continue;
-      const d = distanceMi(center, { lat: u.lat, lng: u.lng });
-      if (d <= radiusMi) out.push({ ...toCard(u), distanceMi: Math.round(d * 10) / 10, checkedInVenueId: at.get(u.id) ?? null });
+      const d = Math.ceil(distanceMi(center, nearbyArea({ lat: u.lat, lng: u.lng })));
+      if (d <= Math.min(radiusMi, 25)) out.push({ ...toCard(u), distanceMi: d, checkedInVenueId: at.get(u.id) ?? null });
     }
     return out.sort((a, b) => a.distanceMi - b.distanceMi);
   },
@@ -289,18 +289,14 @@ export const presence = {
    * "Promote tonight": a KJ or venue pings singers near them about tonight's show.
    * Singers already at that venue are skipped; one ping per singer per sender per night.
    */
-  async promoteTonight(sender: User, center: LatLng, radiusMi: number, show: { venueId: string; venueName: string; venueSlug: string; when: string }) {
-    const near = (await presence.singersNear(sender, center, radiusMi)).filter((s) => s.checkedInVenueId !== show.venueId);
-    const since = clock.now() - 12 * 3600_000;
-    const already = new Set(
-      (await db.select({ userId: schema.notifications.userId, title: schema.notifications.title }).from(schema.notifications).where(and(eq(schema.notifications.kind, 'promo'), gte(schema.notifications.createdAt, since))))
-        .filter((n) => n.title.includes(sender.displayName))
-        .map((n) => n.userId),
-    );
-    const targets = near.filter((s) => !already.has(s.id));
-    for (const s of targets) {
-      await notifications.send(s.id, { kind: 'promo', title: `🎤 ${sender.displayName}: karaoke tonight!`, body: `${show.venueName} · ${show.when}. Come sing with us.`, link: `/venues/${show.venueSlug}` });
+  async promoteTonight(sender: User, _center: LatLng, radiusMi: number, show: { venueId: string; venueName: string; venueSlug: string; when: string }) {
+    const venue = (await venues.byId(show.venueId)) ?? notFound('Venue');
+    const near = (await presence.singersNear(sender, venue, radiusMi)).filter((s) => s.checkedInVenueId !== show.venueId);
+    let sent = 0;
+    for (const s of near) {
+      const created = await notifications.send(s.id, { kind: 'promo', title: `🎤 ${sender.displayName}: karaoke tonight!`, body: `${show.venueName} · ${show.when}. Come sing with us.`, link: `/venues/${show.venueSlug}` }, `ntf_promo_${sender.id}_${s.id}_${nightOf(clock.now())}`);
+      if (created) sent++;
     }
-    return { sent: targets.length, skipped: near.length - targets.length };
+    return { sent, skipped: near.length - sent };
   },
 };

@@ -37,6 +37,8 @@ jobs:
           pnpm typecheck
           node --test scripts/*.test.mjs
           pnpm --filter @ks/api exec node --import tsx scripts/check-phase2.ts
+          pnpm --filter @ks/api exec node --import tsx scripts/check-data-paths.ts
+          pnpm --filter @ks/api exec node --import tsx scripts/check-privacy.ts
       - name: Build production Edge Function
         run: pnpm --filter @ks/api exec node --import tsx scripts/build-edge.ts
       - name: Start disposable Supabase and apply every migration
