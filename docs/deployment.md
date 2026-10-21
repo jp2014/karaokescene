@@ -72,6 +72,9 @@ The temporary stack is stopped and discarded even when verification fails.
 Only verified `main` commits reach the `production` job. Both artifacts build before remote mutation:
 
 1. Push pending Supabase migrations. Never reset the production database or run demo seeds.
+   Then sync the base song catalog (`apps/api/scripts/sync-base-songs.ts`, through the session pooler).
+   It runs in one transaction and is skipped when `apps/api/catalog/base-songs.csv` is unchanged.
+   While it runs (about a minute), KJ songbook imports and new custom songs wait for it.
 2. Configure the API's site origin/timezone and deploy the bundled Edge Function.
 3. Verify its **compiled-in** Git SHA, CORS, database-backed discovery and required Auth settings.
 4. Upload the frontend to Workers Static Assets with SPA routing and no server-side Worker script.

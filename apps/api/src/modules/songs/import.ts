@@ -4,6 +4,13 @@ import { fail } from '../../lib/http.ts';
 /** Longer titles/artists are export glitches (a whole row in one field), not songs. */
 const MAX_FIELD = 200;
 
+/**
+ * A leading header row, in the spellings KJ software exports ("Title,Artist", "Song Title,Artist
+ * Name", "Title,Artist/Band"…). Both columns must look like headers: "Title" by Meghan Trainor is a song.
+ */
+const TITLE_HEADER = /^(song([ _-]?(title|name))?|title|name)$/i;
+const ARTIST_HEADER = /^(song[ _-]?)?(artist|performer|singer|band)s?([ _-]?name)?([ _/&-]+(band|group|artist))?$/i;
+
 /** The first delimiter outside quoted fields identifies CSV versus TSV. */
 function delimiterOf(text: string) {
   let quoted = false;
@@ -31,9 +38,10 @@ export function parseSongbook(text: string) {
   if (records.every((row) => row.length === 1)) records = records.map(([line]) => line.split(/\s+-\s+/));
   const songs: { title: string; artist: string; genre: string; year?: number }[] = [];
   let skipped = 0;
-  for (const record of records) {
+  for (const [i, record] of records.entries()) {
     const [title, artist, genre, year] = record.map((value) => value.trim());
-    if (!title || !artist || /^title$/i.test(title) || title.length > MAX_FIELD || artist.length > MAX_FIELD) { skipped++; continue; }
+    const header = i === 0 && TITLE_HEADER.test(title ?? '') && ARTIST_HEADER.test(artist ?? '');
+    if (header || !title || !artist || title.length > MAX_FIELD || artist.length > MAX_FIELD) { skipped++; continue; }
     songs.push({ title, artist, genre: genre || 'Other', year: Number(year) || undefined });
   }
   return { songs, skipped, lines: records.length };

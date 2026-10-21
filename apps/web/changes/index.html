@@ -87,6 +87,17 @@
        */
       const ROUNDS = [
         {
+          id: 'base-songs', title: 'A base song catalog', date: 'Oct 21, 2026',
+          questions: [
+            ['Source', 'The base list is KaraFun’s public catalog (87,853 songs, ranked by KaraFun popularity). About 2,000 rows in the export had no artist, so they were skipped.'],
+            ['Requests stay honest', 'At a show, search and Song Roulette still use only that KJ’s songbook. Base songs only fill the general search and song lists.'],
+          ],
+          sections: [{ name: 'Songs', changes: [
+            { id: 'base-search', title: 'Search works before any KJ imports a songbook', did: 'The catalog now starts with popular karaoke songs, most popular first. KJ imports and “add it yourself” reuse these songs instead of duplicating them. With an empty list, Song Roulette picks one of the 1,000 best-known songs.', shots: [['before','search'],['after','search']], try: '/songs' },
+          ] }],
+          unchanged: 'KJ songbooks, live requests and song lists work as before. The catalog file is apps/api/catalog/base-songs.csv; each release loads it only when it changes.',
+        },
+        {
           id: 'password-auth', title: 'Email and password sign-in', date: 'Oct 21, 2026',
           questions: [['Launch setup', 'Email confirmation and Google are disabled for now. Enable Email signup and turn Confirm email off in the hosted Supabase dashboard.']],
           sections: [{ name: 'Accounts', changes: [

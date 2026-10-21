@@ -13,6 +13,7 @@
     "release": "node scripts/release.mjs",
     "typecheck": "pnpm -r typecheck",
     "db:reset": "pnpm --filter @ks/api db:reset",
+    "db:base-songs": "pnpm --filter @ks/api db:base-songs",
     "db:generate": "pnpm --filter @ks/api db:generate"
   },
   "devDependencies": {

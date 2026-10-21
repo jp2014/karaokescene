@@ -12,7 +12,8 @@
     "typecheck": "tsc -p .",
     "build:edge": "tsx scripts/build-edge.ts",
     "db:generate": "drizzle-kit generate",
-    "db:reset": "tsx src/demo/reset.ts"
+    "db:reset": "tsx src/demo/reset.ts",
+    "db:base-songs": "node --import tsx scripts/sync-base-songs.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

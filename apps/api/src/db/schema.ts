@@ -197,11 +197,28 @@ export const songs = table(
     artist: text('artist').notNull(),
     genre: text('genre').notNull(),
     decade: text('decade').notNull(),
+    /**
+     * Position in the base catalog (apps/api/catalog/base-songs.csv, 1 = most popular), which
+     * makes the song public before any KJ imports it. Null for songs only KJs or singers added.
+     */
+    baseRank: integer('base_rank'),
   },
-  // Songbook imports match songs case-insensitively by title + artist. Hashed, because a B-tree
-  // entry can't exceed ~2.7KB and nothing ever bounded these fields; queries add md5 equality.
-  (t) => [index('songs_title_artist_md5_idx').on(sql`md5(lower(${t.title}))`, sql`md5(lower(${t.artist}))`)],
+  (t) => [
+    // Songbook imports match songs case-insensitively by title + artist. Hashed, because a B-tree
+    // entry can't exceed ~2.7KB and nothing ever bounded these fields; queries add md5 equality.
+    index('songs_title_artist_md5_idx').on(sql`md5(lower(${t.title}))`, sql`md5(lower(${t.artist}))`),
+    // Ascending, so nulls sort last: the catalog's default listing reads it in order.
+    index('songs_base_rank_idx').on(t.baseRank),
+  ],
 );
+
+/** The base catalog version last synced (scripts/sync-base-songs.ts), so unchanged releases skip it. */
+export const catalogSyncs = table('catalog_syncs', {
+  name: text('name').primaryKey(),
+  sha256: text('sha256').notNull(),
+  songs: integer('songs').notNull(),
+  syncedAt: ts('synced_at').notNull(),
+});
 
 export const songListEntries = table(
   'song_list_entries',

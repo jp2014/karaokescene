@@ -1,7 +1,11 @@
 # Karaoke Scene
 
 A location-based social network for the karaoke community: **Singers**, **KJs** and **Venues** in one ecosystem.
-Production uses Supabase Auth, Postgres, Storage and Realtime through a Hono API. Local development includes a fictional Omaha scene; production starts empty.
+Production uses Supabase Auth, Postgres, Storage and Realtime through a Hono API. Local development includes a fictional Omaha scene; production starts with no venues or accounts.
+
+**Song catalog:** the base catalog (`apps/api/catalog/base-songs.csv`, from KaraFun's public catalog, most popular first)
+plus every KJ's imported songbook. Each release loads the base file after migrations, only when it changed.
+To refresh it from a new KaraFun export: `cd apps/api && node --import tsx scripts/prepare-base-songs.ts <export.csv>`, then commit the file.
 
 ## Run it
 
@@ -20,6 +24,7 @@ On your phone (same Wi-Fi), use the "Network" URL Vite prints. Printed QR codes 
 | `pnpm start` | Production-style build (demo included), served by the API as one process on `:8787` |
 | `pnpm db:reset` | Wipe and reseed demo data (also available in **Demo controls**) |
 | `pnpm typecheck` | Typecheck every package |
+| `pnpm db:base-songs` | Load the base song catalog into the local database (stop `pnpm dev` first; `pnpm db:reset` removes it) |
 | `pnpm db:generate` | Generate a migration after editing `apps/api/src/db/schema.ts` (written to `supabase/migrations`) |
 | `pnpm release` | Deploy production (requires hosting accounts; see below) |
 
@@ -157,7 +162,7 @@ packages/api-client  Typed client generated from the API's routes (Hono RPC). A 
 | `profiles` | Supabase identity, role onboarding, privacy-filtered profile views, Ghost Mode |
 | `social` | Friends, favorites, blocks, positive-only praise |
 | `reputation` | Badge catalog and award rules (KJ→singer, venue→KJ, growth badges) |
-| `songs` | Catalog, personal song lists, roulette, recommendations, KJ songbooks + CSV import |
+| `songs` | Catalog (base catalog + KJ imports), personal song lists, roulette, recommendations, KJ songbooks + CSV import |
 | `qr` | QR scan handling and the referral growth loop |
 | `promo` | Share reminders, Auto Promote, Message Blast; users share through native share, Facebook links, SMS or clipboard |
 | `media` | Photo and menu uploads (Supabase Storage; disk locally) |

@@ -9,7 +9,7 @@ import { eq } from 'drizzle-orm';
 import { schema, setDb, type DB } from '../src/db/client.ts';
 import { localTimeToMs, SCENE_TZ } from '../src/lib/clock.ts';
 import { parseSongbook } from '../src/modules/songs/import.ts';
-import { songbooks, songCatalog, songLists } from '../src/modules/songs/service.ts';
+import { baseCatalog, songbooks, songCatalog, songLists } from '../src/modules/songs/service.ts';
 import { venues } from '../src/modules/venues/service.ts';
 import { notifications } from '../src/modules/notifications/service.ts';
 import { BADGES } from '../src/modules/reputation/badges.ts';
@@ -33,6 +33,12 @@ assert.deepEqual(parsed, { songs: [
 assert.equal(parseSongbook('Title\tArtist\nA Song\tArtist, Jr.').songs[0].artist, 'Artist, Jr.');
 assert.equal(parseSongbook('"A\tSong",Artist').songs[0].title, 'A\tSong');
 assert.equal(parseSongbook('A Song - Artist').songs[0].title, 'A Song');
+assert.deepEqual(parseSongbook('Title,Artist\nTitle,Meghan Trainor,Pop,2014').songs.map((s) => s.artist), ['Meghan Trainor'], 'Only a leading Title,Artist row is a header');
+assert.equal(parseSongbook('Title,Meghan Trainor').songs.length, 1);
+for (const header of ['Title,Artist Name', 'Song Title,Artist', 'TITLE,ARTIST', 'Song,Artist', 'Name,Performer', 'Title,Artist/Band', 'song_title\tartist_name', 'Title,Artists']) {
+  const row = header.includes('\t') ? 'Creep\tRadiohead' : 'Creep,Radiohead';
+  assert.deepEqual(parseSongbook(`${header}\n${row}`).songs.map((s) => s.title), ['Creep'], `"${header}" is a header`);
+}
 
 const pg = new PGlite();
 const db = drizzle(pg, { schema });
@@ -108,6 +114,41 @@ try {
   await songLists.remove('singer', available.id);
   assert.equal((await songLists.roulette('singer', kj.id))?.id, available.id, 'Empty personal list uses selected book');
   console.log('✓ Roulette always chooses a playable song when a KJ is selected');
+
+  const songCount = async () => (await db.select().from(schema.songs)).length;
+  const rankOf = async (id: string) => (await db.query.songs.findFirst({ where: eq(schema.songs.id, id) }))!.baseRank;
+  const baseText = 'Title,Artist,Genre,Year\nHello,Adele,Pop,2015\nBrand New,Base Artist,Rock,1999\nbrand new,BASE ARTIST,,\nRace Song,Racer,Pop,2001\nShared,Dup,,\n';
+  await db.insert(schema.songs).values([{ id: 'sng_base_a', title: 'Shared', artist: 'Dup', genre: 'Pop', decade: '2010s' }, { id: 'sng_base_b', title: 'SHARED', artist: 'DUP', genre: 'Pop', decade: '2010s' }]);
+  await songbooks.add('kj', 'sng_base_b');
+  const before = await songCount();
+  assert.deepEqual(await baseCatalog.sync(baseText), { changed: true, songs: 4, skipped: 1 });
+  assert.equal(await songCount(), before + 1, 'Base songs reuse catalog songs (any case); only new ones are created');
+  assert.equal((await songCatalog.search(''))[0].id, 'sng_hello_b', 'The catalog lists the most popular base songs first, as the copy a KJ has');
+  const brandNew = (await songCatalog.search('brand new'))[0];
+  assert.deepEqual([brandNew?.title, brandNew?.baseRank], ['Brand New', 2], 'Base songs are public without a songbook; a duplicate keeps its first rank');
+  assert.deepEqual([a.genre, (await db.query.songs.findFirst({ where: eq(schema.songs.id, a.id) }))!.genre], ['Other', 'Pop'], 'Unknown genres take the base catalog’s');
+  assert.deepEqual([await rankOf('sng_base_a'), await rankOf('sng_base_b')], [null, 5], 'Of equivalent songs, the one a KJ has is ranked');
+  assert.equal((await songCatalog.search('', { kjId: 'empty-kj' })).length, 0, 'A KJ’s book still holds only its own songs');
+  assert.ok((await songLists.roulette('singer'))!.baseRank, 'Roulette with an empty list picks a well-known song');
+  assert.equal((await baseCatalog.sync(baseText)).changed, false, 'An unchanged file is skipped');
+  assert.equal((await songbooks.importText('empty-kj', 'BRAND NEW,base artist')).added, 1);
+  assert.equal((await songbooks.stats('empty-kj')).total, 1);
+  assert.equal((await songCatalog.search('', { kjId: 'empty-kj' }))[0].id, brandNew.id, 'KJ imports reuse base songs');
+  // Sol's lifecycle: once ranked, a duplicate stays the base song after its KJ drops it.
+  await songLists.add('singer', 'sng_base_b');
+  await songbooks.remove('kj', 'sng_base_b');
+  await songbooks.add('other-kj', 'sng_base_a'); // a competing public duplicate
+  await baseCatalog.sync(`${baseText}Unrelated,Newcomer\n`);
+  assert.deepEqual([await rankOf('sng_base_a'), await rankOf('sng_base_b')], [null, 5], 'A resync keeps the ranked duplicate');
+  await songbooks.importText('kj', 'shared,dup');
+  assert.equal((await songLists.forUser('singer', 'kj')).find((s) => s.id === 'sng_base_b')?.inKjBook, true, 'KJ imports then reuse the singer’s copy');
+  await songLists.remove('singer', 'sng_base_b');
+  await baseCatalog.sync('Hello,Adele');
+  assert.deepEqual([await rankOf('sng_hello_b'), await rankOf(brandNew.id), await rankOf(a.id)], [1, null, null], 'Songs dropped from the file lose their rank');
+  assert.equal((await songCatalog.search('race song')).length, 0, 'A dropped song without a songbook leaves the catalog');
+  assert.equal((await songCatalog.search('brand new')).length, 1, 'A dropped song a KJ has stays public');
+  await assert.rejects(baseCatalog.sync('Title,Artist\n'), /no songs/);
+  console.log('✓ the base catalog ranks, reuses and retires songs idempotently alongside KJ songbooks');
 
   const venue = await venues.createByKj(kj, { name: 'Unlink regression', address: '1 Main', neighborhood: '', city: 'Omaha', lat: 41.25, lng: -95.93, venueTypes: [], nights: [{ dayOfWeek: 2, startMin: 1200, endMin: 1440 }] });
   const night = (await venues.nightsFor(venue.id))[0];

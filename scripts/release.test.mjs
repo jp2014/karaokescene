@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { databaseRegion, release, releaseConfig, transactionPoolerUrl } from './release.mjs';
+import { databaseRegion, release, releaseConfig, sessionPoolerUrl, transactionPoolerUrl } from './release.mjs';
 
 const env = {
   CLOUDFLARE_ACCOUNT_ID: 'b'.repeat(32), GITHUB_SHA: 'a'.repeat(40), SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst', SUPABASE_DB_PASSWORD: 'test-only',
@@ -37,7 +37,8 @@ test('release verifies API before frontend deployment, then verifies the publish
   const calls = [];
   release({ env, readPoolerUrl, writeAsset: () => {}, run: (cmd, args) => calls.push([cmd, ...args].join(' ')) });
   const at = (part) => calls.findIndex((call) => call.includes(part));
-  assert.ok(at('supabase db push') < at('supabase functions deploy'));
+  assert.ok(at('supabase db push') < at('sync-base-songs.ts'));
+  assert.ok(at('sync-base-songs.ts') < at('supabase functions deploy'));
   assert.ok(at('supabase functions deploy') < at('verify-release.mjs api'));
   assert.ok(at('verify-release.mjs api') < at('wrangler deploy'));
   assert.ok(at('wrangler deploy') < at('verify-release.mjs web'));
@@ -89,4 +90,15 @@ test('the frontend pins the API to the database region, learned before any remot
   assert.equal(calls[at('verify-release.mjs api')].env.API_REGION, 'us-west-2');
   assert.equal(databaseRegion('postgresql://postgres.x@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres'), 'ap-southeast-1');
   assert.throws(() => databaseRegion('postgresql://postgres.x@pooler.example.com:6543/postgres'), /database region/);
+});
+
+test('the base catalog syncs through the session pooler, with the password kept off the command line', () => {
+  const calls = [];
+  release({ env: { ...env, SUPABASE_DB_PASSWORD: 'p@ss:/$HOME"x' }, readPoolerUrl, writeAsset: () => {}, run: (cmd, args, opts) => calls.push({ args, env: opts?.env }) });
+  const sync = calls.find((c) => c.args.some((a) => a.includes('sync-base-songs.ts')));
+  const url = new URL(sync.env.BASE_SONGS_DATABASE_URL);
+  assert.equal(url.host, 'aws-1-us-west-2.pooler.supabase.com:5432');
+  assert.equal(decodeURIComponent(url.password), 'p@ss:/$HOME"x');
+  assert.ok(!sync.args.join(' ').includes('p@ss'));
+  assert.equal(sessionPoolerUrl(readPoolerUrl(), 'x', 'abcdefghijklmnopqrst'), 'postgresql://postgres.abcdefghijklmnopqrst:x@aws-1-us-west-2.pooler.supabase.com:5432/postgres');
 });

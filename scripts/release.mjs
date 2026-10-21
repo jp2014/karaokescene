@@ -37,11 +37,20 @@ export function releaseConfig(env) {
  * `supabase link` saves (session mode, no password).
  */
 export function transactionPoolerUrl(cached, password, ref) {
+  return poolerUrl(cached, password, ref, '6543');
+}
+
+/** Session mode (port 5432): one long transaction from this machine, e.g. the base catalog sync. */
+export function sessionPoolerUrl(cached, password, ref) {
+  return poolerUrl(cached, password, ref, '5432');
+}
+
+function poolerUrl(cached, password, ref, port) {
   const url = new URL(cached.trim());
   if (!/^postgres(ql)?:$/.test(url.protocol) || !url.hostname.endsWith('.pooler.supabase.com') || url.username !== `postgres.${ref}`) {
     throw new Error(`supabase link did not record a Supavisor pooler URL for ${ref}.`);
   }
-  url.port = '6543';
+  url.port = port;
   // Fully encoded (incl. `$`, which the secrets env file would expand); postgres.js decodes it.
   url.password = encodeURIComponent(password);
   return url.href;
@@ -69,7 +78,7 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   invoke('node', ['--import', 'tsx', 'scripts/build-edge.ts'], { cwd: join(root, 'apps/api'), env: releaseEnv });
   // Linking only reads the project (and records its pooler URL locally); nothing remote changes
   // until `db push`. The frontend needs the database region, so it builds after the link.
-  let poolerUrl, region;
+  let poolerUrl, sessionUrl, region;
   if (!checkOnly) {
     step(`Supabase: link ${cfg.ref}`);
     supabase('link', '--project-ref', cfg.ref);
@@ -81,6 +90,7 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
       throw new Error('supabase link did not record the database pooler URL (Supabase API unavailable?). Rerun the release.');
     }
     poolerUrl = transactionPoolerUrl(cachedPooler, env.SUPABASE_DB_PASSWORD, cfg.ref);
+    sessionUrl = sessionPoolerUrl(cachedPooler, env.SUPABASE_DB_PASSWORD, cfg.ref);
     region = databaseRegion(cachedPooler);
   }
   const webEnv = {
@@ -98,6 +108,10 @@ export function release({ env = process.env, checkOnly = false, run = execFileSy
   const verifyEnv = { ...releaseEnv, API_REGION: region };
   step('Supabase: push migrations');
   supabase('db', 'push', '--linked');
+  // Atomic, and a no-op unless apps/api/catalog/base-songs.csv changed. The URL (with the
+  // password) goes through the environment, never the command line.
+  step('Supabase: sync base song catalog');
+  invoke('node', ['--import', 'tsx', 'scripts/sync-base-songs.ts'], { cwd: join(root, 'apps/api'), env: { ...env, BASE_SONGS_DATABASE_URL: sessionUrl } });
   step('Supabase: configure API origins and database pooler');
   const dir = mkdtempSync(join(tmpdir(), 'ks-secrets-'));
   try {

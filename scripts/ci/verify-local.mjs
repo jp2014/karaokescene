@@ -32,6 +32,13 @@ async function waitFor(url, child) {
 }
 try {
   run('pnpm', ['--filter', '@ks/web', 'build'], { env });
+  // The release's base catalog sync, against real Postgres; the second run must be a no-op.
+  const syncBase = () => execFileSync('node', ['--import', 'tsx', 'scripts/sync-base-songs.ts'], { cwd: join(root, 'apps/api'), env: { ...env, BASE_SONGS_DATABASE_URL: local.DB_URL }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  for (const expected of [/Base catalog (synced|unchanged)/, /Base catalog unchanged/]) {
+    const out = syncBase();
+    process.stdout.write(out);
+    if (!expected.test(out)) throw new Error(`Base catalog sync: expected ${expected}, got: ${out.trim()}`);
+  }
   const api = spawn('node', ['--import', 'tsx', 'src/hosts/node.ts'], { cwd: join(root, 'apps/api'), env, stdio: 'inherit', detached: true });
   children.push(api);
   const file = join(dir, '.env');

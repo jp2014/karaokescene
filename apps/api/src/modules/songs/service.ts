@@ -1,17 +1,24 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { db, rowsOf, schema } from '../../db/client.ts';
+import { and, asc, desc, eq, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { db, rowsOf, schema, type DB } from '../../db/client.ts';
 import { clock } from '../../lib/clock.ts';
 import { newId } from '../../lib/ids.ts';
 import { parseSongbook } from './import.ts';
 
-const { songs: S, songListEntries: L, songbookEntries: SB } = schema;
+const { songs: S, songListEntries: L, songbookEntries: SB, catalogSyncs: CS } = schema;
 export type Song = typeof S.$inferSelect;
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
 
 /**
- * The public catalog is whatever KJs have imported: songs in at least one songbook. A song a
- * singer free-adds exists only on their own list until some KJ imports it too.
+ * The public catalog: the base catalog (popular karaoke songs, see `baseCatalog`) plus whatever
+ * KJs have imported. A song a singer free-adds exists only on their own list until then.
  */
-const inCatalog = sql`exists (select 1 from ${SB} where ${SB.songId} = ${S.id})`;
+const inCatalog = sql`(${S.baseRank} is not null or exists (select 1 from ${SB} where ${SB.songId} = ${S.id}))`;
+/** Most popular first; songs outside the base catalog follow alphabetically. */
+const byPopularity = [sql`${S.baseRank} asc nulls last`, asc(S.artist), asc(S.title)];
+/** Bump when parsing or matching changes, so the next release resyncs an unchanged file. */
+const BASE_SYNC_VERSION = 2;
+/** Roulette with nothing on your list picks among songs nearly everyone knows. */
+const WELL_KNOWN = 1000;
 
 /** Serializes creating catalog songs, so concurrent adds and imports can't duplicate one. */
 const catalogLock = sql`select pg_advisory_xact_lock(hashtext('songs:catalog'))`;
@@ -29,7 +36,7 @@ export const songCatalog = {
     const base = opts.kjId
       ? db.select({ song: S }).from(S).innerJoin(SB, and(eq(SB.songId, S.id), eq(SB.kjId, opts.kjId))).where(match)
       : db.select({ song: S }).from(S).where(and(inCatalog, match));
-    const rows = await base.orderBy(asc(S.artist), asc(S.title)).limit(opts.limit ?? 50);
+    const rows = await base.orderBy(...byPopularity).limit(opts.limit ?? 50);
     return rows.map((r) => r.song);
   },
 
@@ -48,7 +55,7 @@ export const songCatalog = {
       await tx.execute(catalogLock);
       const raced = await tx.query.songs.findFirst({ where: match });
       if (raced) return raced;
-      const song = { id: newId('sng'), title, artist, genre, decade: decadeOf(year) };
+      const song = { id: newId('sng'), title, artist, genre, decade: decadeOf(year), baseRank: null };
       await tx.insert(S).values(song);
       return song;
     });
@@ -125,6 +132,8 @@ export const songLists = {
           .where(eq(SB.kjId, kjId)).orderBy(sql`random()`).limit(1);
         return any?.song ?? null;
       }
+      const [known] = await db.select().from(S).where(lte(S.baseRank, WELL_KNOWN)).orderBy(sql`random()`).limit(1);
+      if (known) return known;
       const [any] = await db.select().from(S).where(inCatalog).orderBy(sql`random()`).limit(1);
       return any ?? null;
     }
@@ -178,48 +187,118 @@ export const songbooks = {
     // round trip per song. The catalog lock keeps concurrent imports from duplicating a new song.
     const added = await db.transaction(async (tx) => {
       await tx.execute(catalogLock);
-      /** Postgres-normalized title + artist → the catalog song used for it in this import. */
-      const chosen = new Map<string, string>();
+      const resolve = songResolver(tx, kjId);
       let added = 0;
       for (let i = 0; i < songs.length; i += IMPORT_BATCH) {
-        const batch = songs.slice(i, i + IMPORT_BATCH);
-        // Postgres lower(), not JavaScript's, decides what "the same song" is (they differ for some
-        // Unicode). With case-variant duplicates in the catalog, prefer one already in this KJ's
-        // book, then the oldest id, so re-imports are stable.
-        const input = sql.join(batch.map((b, j) => sql`(${j}::int, ${b.title}::text, ${b.artist}::text)`), sql`, `);
-        const rows = rowsOf<{ i: number; title: string; artist: string; id: string | null }>(
-          await tx.execute(sql`
-            with input(i, title, artist) as (values ${input})
-            select input.i, lower(input.title) as title, lower(input.artist) as artist, s.id,
-              -- A per-row primary-key probe: as a join, stale stats mid-import made the planner
-              -- compare every row against the KJ's whole book.
-              exists (select 1 from ${SB} mine where mine.kj_id = ${kjId} and mine.song_id = s.id) as mine
-            from input
-            left join ${S} s on md5(lower(s.title)) = md5(lower(input.title)) and md5(lower(s.artist)) = md5(lower(input.artist))
-              and lower(s.title) = lower(input.title) and lower(s.artist) = lower(input.artist)
-            order by input.i, mine desc, s.id`),
-        );
-        const matches = rows.map((r) => ({ i: Number(r.i), key: JSON.stringify([r.title, r.artist]), id: r.id }));
-        const fresh: Song[] = [];
-        const seen = new Set<number>();
-        for (const m of matches) {
-          if (seen.has(m.i)) continue; // first (preferred) candidate only
-          seen.add(m.i);
-          if (chosen.has(m.key)) continue;
-          if (m.id) chosen.set(m.key, m.id);
-          else {
-            // First spelling in the file wins for a song new to the catalog.
-            const b = batch[m.i];
-            fresh.push({ id: newId('sng'), title: b.title, artist: b.artist, genre: b.genre, decade: decadeOf(b.year) });
-            chosen.set(m.key, fresh.at(-1)!.id);
-          }
-        }
-        if (fresh.length) await tx.insert(S).values(fresh);
-        const entries = [...new Set(matches.map((m) => chosen.get(m.key)!))].map((songId) => ({ kjId, songId }));
+        const ids = await resolve(songs.slice(i, i + IMPORT_BATCH));
+        const entries = [...new Set(ids)].map((songId) => ({ kjId, songId }));
         added += (await tx.insert(SB).values(entries).onConflictDoNothing().returning({ songId: SB.songId })).length;
       }
       return added;
     });
     return { added, skipped, lines };
+  },
+};
+
+type ParsedSong = ReturnType<typeof parseSongbook>['songs'][number];
+
+/**
+ * Matches parsed songs to catalog songs case-insensitively by title + artist, creating the
+ * missing ones. Returns each input song's id. Call inside a transaction holding `catalogLock`;
+ * reuse one resolver across a file's batches so its duplicates resolve to one song.
+ */
+function songResolver(tx: Tx, preferKj?: string) {
+  /** Postgres-normalized title + artist → the catalog song used for it in this file. */
+  const chosen = new Map<string, string>();
+  return async (batch: ParsedSong[]) => {
+    // Postgres lower(), not JavaScript's, decides what "the same song" is (they differ for some
+    // Unicode). With case-variant duplicates in the catalog, prefer one already in this KJ's
+    // book, then the base catalog's, then one in any songbook (the copies singers can pick from
+    // search, so they find it in that KJ's book), then the oldest id, so re-imports are stable.
+    const input = sql.join(batch.map((b, j) => sql`(${j}::int, ${b.title}::text, ${b.artist}::text)`), sql`, `);
+    // A per-row primary-key probe: as a join, stale stats mid-import made the planner compare
+    // every row against the KJ's whole book.
+    const mine = preferKj
+      ? sql`exists (select 1 from ${SB} mine where mine.kj_id = ${preferKj} and mine.song_id = s.id)`
+      : sql`false`;
+    const shared = sql`exists (select 1 from ${SB} book where book.song_id = s.id)`;
+    const rows = rowsOf<{ i: number; title: string; artist: string; id: string | null }>(
+      await tx.execute(sql`
+        with input(i, title, artist) as (values ${input})
+        select input.i, lower(input.title) as title, lower(input.artist) as artist, s.id, ${mine} as mine, ${shared} as shared
+        from input
+        left join ${S} s on md5(lower(s.title)) = md5(lower(input.title)) and md5(lower(s.artist)) = md5(lower(input.artist))
+          and lower(s.title) = lower(input.title) and lower(s.artist) = lower(input.artist)
+        order by input.i, mine desc, s.base_rank is not null desc, shared desc, s.id`),
+    );
+    const ids: string[] = [];
+    const fresh: Song[] = [];
+    for (const r of rows) {
+      const i = Number(r.i);
+      if (ids[i]) continue; // first (preferred) candidate only
+      const key = JSON.stringify([r.title, r.artist]);
+      if (!chosen.has(key)) {
+        if (r.id) chosen.set(key, r.id);
+        else {
+          // First spelling in the file wins for a song new to the catalog.
+          const b = batch[i];
+          fresh.push({ id: newId('sng'), title: b.title, artist: b.artist, genre: b.genre, decade: decadeOf(b.year), baseRank: null });
+          chosen.set(key, fresh.at(-1)!.id);
+        }
+      }
+      ids[i] = chosen.get(key)!;
+    }
+    if (fresh.length) await tx.insert(S).values(fresh);
+    return ids;
+  };
+}
+
+/**
+ * The base catalog: popular karaoke songs (apps/api/catalog/base-songs.csv, most popular first)
+ * that make the app useful before any KJ imports a songbook. scripts/sync-base-songs.ts loads it
+ * on every release; KJ imports and singer adds match these songs instead of duplicating them.
+ */
+export const baseCatalog = {
+  /**
+   * Make the catalog's base songs exactly the file's: rank its songs, unrank songs no longer in it
+   * (they stay for lists and songbooks that use them). Atomic, and skipped if the file is unchanged.
+   */
+  async sync(text: string, opts: { force?: boolean } = {}) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${BASE_SYNC_VERSION}\n${text}`));
+    const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    const { songs, skipped } = parseSongbook(text);
+    if (!songs.length) throw new Error('The base catalog has no songs');
+    return db.transaction(async (tx) => {
+      await tx.execute(catalogLock);
+      const [last] = await tx.select().from(CS).where(eq(CS.name, 'base'));
+      if (last?.sha256 === sha256 && !opts.force) return { changed: false, songs: last.songs, skipped };
+      // Match every song before clearing ranks: the resolver prefers the currently ranked copy, so a
+      // resync keeps the base song singers saved rather than switching to an equivalent duplicate.
+      const resolve = songResolver(tx);
+      const ids: string[] = [];
+      for (let i = 0; i < songs.length; i += IMPORT_BATCH) ids.push(...(await resolve(songs.slice(i, i + IMPORT_BATCH))));
+      await tx.update(S).set({ baseRank: null }).where(sql`${S.baseRank} is not null`);
+      const ranked = new Set<string>();
+      for (let i = 0; i < songs.length; i += IMPORT_BATCH) {
+        // A duplicate line keeps its first (best) rank. Songs whose genre or decade nobody knew
+        // take the base catalog's.
+        const values = songs.slice(i, i + IMPORT_BATCH).flatMap((b, j) => {
+          const id = ids[i + j];
+          if (ranked.has(id)) return [];
+          ranked.add(id);
+          return [sql`(${id}::text, ${i + j + 1}::int, ${b.genre}::text, ${decadeOf(b.year)}::text)`];
+        });
+        if (!values.length) continue;
+        await tx.execute(sql`
+          update ${S} set base_rank = v.rank,
+            genre = case when ${S.genre} = 'Other' then v.genre else ${S.genre} end,
+            decade = case when ${S.decade} = 'Unknown' then v.decade else ${S.decade} end
+          from (values ${sql.join(values, sql`, `)}) v(id, rank, genre, decade)
+          where ${S.id} = v.id`);
+      }
+      const row = { name: 'base', sha256, songs: ranked.size, syncedAt: clock.now() };
+      await tx.insert(CS).values(row).onConflictDoUpdate({ target: CS.name, set: row });
+      return { changed: true, songs: ranked.size, skipped };
+    });
   },
 };
