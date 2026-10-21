@@ -14,6 +14,7 @@ await build({
   entryPoints: [resolve(import.meta.dirname, '../src/hosts/edge.ts')],
   outfile,
   bundle: true,
+  define: { __RELEASE_SHA__: JSON.stringify(process.env.RELEASE_SHA ?? null) },
   format: 'esm',
   platform: 'node',
   target: 'es2022',

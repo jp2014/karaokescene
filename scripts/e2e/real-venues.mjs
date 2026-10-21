@@ -1,10 +1,9 @@
 // End-to-end check of venue onboarding in the real app (no demo): a venue account adds its own
 // venue; a KJ lists a venue and its owner later finds and claims it.
 // Usage: node scripts/e2e/real-venues.mjs   (see lib.mjs for WEB_URL / MAILPIT_URL)
-import { chromium } from 'playwright-core';
-import { apiAs, checker, phone, run, signIn, web } from './lib.mjs';
+import { apiAs, checker, launchBrowser, phone, run, signIn, web } from './lib.mjs';
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launchBrowser();
 const { check, fail, done } = checker();
 try {
   // 1. A venue account with no venue gets the setup screen (on HQ and Profile), then adds its venue.

@@ -66,64 +66,47 @@ mock checkout) only exists locally:
 | Media | `apps/api/data/media` | Supabase Storage (`media` bucket) |
 | Scheduled jobs | 60s timer | pg_cron (every 5 min) |
 | Push | off | Dormant; use in-app notifications + Realtime |
-| Web | Vite dev server | Cloudflare Pages (static) |
+| Web | Vite dev server | Cloudflare Workers Static Assets |
 
 To try real Supabase locally, see `apps/api/.env.example`.
 
 ## Production setup
 
-Production is not deployed yet. Hosting direction: a free static web host with Supabase for the backend.
-`pnpm release` builds both artifacts first, then deploys the backend and web app. The local Netlify configuration has been removed; any old Netlify site must be disabled in that account.
+[Deployment setup and operations](docs/deployment.md) covers the GitHub `production` environment,
+Cloudflare Worker, Supabase Auth/SMTP, and the exact secrets and variables to configure.
 
-Create a production Supabase project in US East and a Cloudflare account. Log in once:
+`.github/workflows/pipeline.yml` runs on pull requests and pushes to `main`:
 
-```bash
-npx supabase@2 login
-npx wrangler@4 login
-npx wrangler@4 pages project create karaokescene --production-branch main
-```
+- **Verify:** typecheck, focused regressions, fresh Supabase migrations, real Auth/venue browser checks,
+  Edge Runtime smoke, production builds with demo exclusion, and a Workers deployment dry run.
+- **Deploy production:** after verification on `main`, build both production artifacts, apply migrations,
+  deploy the API, check its embedded commit and database access, deploy the frontend, then verify assets,
+  browser rendering and browser-to-API connectivity. PR checks never receive production credentials.
 
-Use an available Pages project name and its actual production URL. Copy `.env.deploy.example` to
-`.env.deploy`, fill in the project reference, database password, public Supabase key, Pages project and site URL.
-Then configure:
-
-1. Auth: email codes using `supabase/templates/email-code.html`, Google OAuth, and the final site's URL/redirect URLs.
-2. Custom SMTP for real users. Supabase's built-in sender only delivers to project team addresses
-   ([SMTP documentation](https://supabase.com/docs/guides/auth/auth-smtp)).
-3. Database migrations, the `api` Edge Function, and Storage via the release workflow. The Edge Function receives Supabase’s built-in service credentials; do not expose them to the client.
-4. The static web build with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public key), and
-   `VITE_API_URL=https://<ref>.supabase.co/functions/v1/api`. Service keys never go into web settings.
-
-Do not run `supabase config push` with the local Auth configuration: it contains localhost URLs.
-Email templates in the dashboard must use `{{ .Token }}` (the supplied HTML does), not a magic link.
-Set the production Site URL to the Pages origin and allow `<site-url>/welcome` for Google returns.
-Google’s OAuth app must allow `https://<ref>.supabase.co/auth/v1/callback`.
-Keep `app` out of the Supabase Data API’s exposed schemas.
+A running main pipeline is not superseded. GitHub keeps only the newest pending run when several pushes queue.
+Use backward-compatible migrations: an older frontend/API may remain active during a release.
+There are no hosted PR previews or separate staging project yet.
 
 ```bash
-pnpm release --check   # Validate settings + typecheck/build; no remote writes
-pnpm release           # Migrations, API secrets/function, then Pages upload
-node --test scripts/release.test.mjs
+pnpm release --check   # Validate settings and build; no remote writes
+pnpm release           # Same ordered release used by GitHub Actions
+node --test scripts/*.test.mjs
 ```
 
-`--check` validates local artifacts; it does not verify login, SMTP, Google credentials, or remote account access.
-Cloudflare serves client routes through its SPA fallback (no top-level `404.html` is shipped).
-[Pages Direct Upload](https://developers.cloudflare.com/pages/get-started/direct-upload/) documents this deployment model;
-Git-based deployment would require a separate Pages project.
-
-Leave Firebase settings unset for launch. Push remains dormant; in-app notifications and Realtime work independently.
-Payments show “coming soon”; local demo plan toggles never ship in the real build.
+Local releases read ignored `.env.deploy`; GitHub uses environment secrets/variables.
+`--check` does not verify remote credentials, Auth provider settings or email delivery.
+The old Netlify configuration is removed; an existing Netlify site must be disabled in that account.
 
 ### Verify against local Supabase
 
 The stack uses ports 55421 (API), 55422 (Postgres), 55423 (Studio), 55424 (Mailpit).
-`npx supabase start` requires Docker. The project's Auth config is for local development;
+`pnpm exec supabase start` requires Docker. The project's Auth config is for local development;
 production URLs and Google credentials must be set separately before deployment.
 
 Run the API with `DEMO=off`, `DATABASE_URL` pointing at local Supabase, `DATABASE_MIGRATE=off`
 (if the CLI applied migrations), `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
 Run Vite with `VITE_DEMO=false`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `API_URL` pointing at that API.
-Use separate ports from the demo (8791 / 5174). `npx supabase status` gives the local settings.
+Use separate ports from the demo (8791 / 5174). `pnpm exec supabase status` gives the local settings.
 
 Existing browser checks (Chrome required; default web port 5174):
 
@@ -136,7 +119,7 @@ Verify the actual Edge Runtime too (it uses Kong internally, so the local public
 
 ```bash
 # Create a local ignored env file containing AUTH_JWT_ISSUER=http://127.0.0.1:55421/auth/v1
-npx supabase functions serve api --no-verify-jwt --env-file /path/to/local-edge.env
+pnpm exec supabase functions serve api --no-verify-jwt --env-file /path/to/local-edge.env
 # In another terminal:
 node scripts/e2e/edge-smoke.mjs
 ```

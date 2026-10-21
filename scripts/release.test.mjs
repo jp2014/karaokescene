@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { release, releaseConfig } from './release.mjs';
 
 const env = {
-  SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst', SUPABASE_DB_PASSWORD: 'test-only',
-  SUPABASE_ANON_KEY: 'sb_publishable_test', CLOUDFLARE_PAGES_PROJECT: 'scene-test', SITE_URL: 'https://scene-test.pages.dev',
+  CLOUDFLARE_ACCOUNT_ID: 'b'.repeat(32), GITHUB_SHA: 'a'.repeat(40), SUPABASE_PROJECT_REF: 'abcdefghijklmnopqrst', SUPABASE_DB_PASSWORD: 'test-only',
+  SUPABASE_ANON_KEY: 'sb_publishable_test', CLOUDFLARE_WORKER_NAME: 'scene-test', SITE_URL: 'https://scene-test.example.workers.dev',
 };
 test('release rejects private keys and invalid site URLs before doing work', () => {
   for (const value of ['sb_secret_private', `header.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.signature`]) {
@@ -16,9 +16,10 @@ test('release rejects private keys and invalid site URLs before doing work', () 
 test('check builds real artifacts without remote mutations or inherited demo flags', () => {
   const calls = [];
   release({ env: { ...env, VITE_DEMO: 'true', VITE_FIREBASE_API_KEY: 'inherited' }, checkOnly: true,
-    run: (cmd, args, opts) => calls.push({ cmd, args, opts }) });
+    writeAsset: () => {}, run: (cmd, args, opts) => calls.push({ cmd, args, opts }) });
   assert.equal(calls.length, 3);
   assert.ok(calls.every((c) => c.cmd !== 'npx'));
+  assert.equal(calls[1].opts.env.RELEASE_SHA, env.GITHUB_SHA);
   const web = calls.at(-1).opts.env;
   assert.equal(web.VITE_DEMO, 'false');
   assert.equal(web.VITE_FIREBASE_API_KEY, '');
@@ -28,4 +29,28 @@ test('build failure stops before migrations or deployment', () => {
   let called = 0;
   assert.throws(() => release({ env, run: () => { called++; throw new Error('build failed'); } }), /build failed/);
   assert.equal(called, 1);
+});
+
+test('release verifies API before frontend deployment, then verifies the published site', () => {
+  const calls = [];
+  release({ env, writeAsset: () => {}, run: (cmd, args) => calls.push([cmd, ...args].join(' ')) });
+  const at = (part) => calls.findIndex((call) => call.includes(part));
+  assert.ok(at('supabase db push') < at('supabase functions deploy'));
+  assert.ok(at('supabase functions deploy') < at('verify-release.mjs api'));
+  assert.ok(at('verify-release.mjs api') < at('wrangler deploy'));
+  assert.ok(at('wrangler deploy') < at('verify-release.mjs web'));
+  assert.ok(at('verify-release.mjs web') < at('production-smoke.mjs'));
+});
+test('API smoke failure prevents frontend publication', () => {
+  const calls = [];
+  assert.throws(() => release({ env, writeAsset: () => {}, run: (cmd, args) => {
+    const call = [cmd, ...args].join(' ');
+    calls.push(call);
+    if (call.includes('verify-release.mjs api')) throw new Error('API did not become healthy');
+  } }), /API did not become healthy/);
+  assert.ok(!calls.some((call) => call.includes('wrangler deploy')));
+});
+
+test('CI credentials are checked before any deployment work', () => {
+  assert.throws(() => releaseConfig({ ...env, CI: 'true' }), /CI deployment requires/);
 });

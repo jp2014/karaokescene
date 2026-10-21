@@ -22,9 +22,11 @@ import { walletRoutes } from './modules/wallet/routes.ts';
  * Runtime-agnostic: hosts (src/hosts/*) pick the database and adapters, then serve `app.fetch`.
  * Nothing demo-related is composed here; the local Node host mounts that under /api/demo.
  */
+// Replaced by the Edge build; local Node serves null. This identifies code, not mutable secrets.
+declare const __RELEASE_SHA__: string | null;
 const api = new Hono<AppEnv>()
   .use(viewerMiddleware)
-  .get('/health', (c) => c.json({ ok: true }))
+  .get('/health', (c) => c.json({ ok: true, revision: typeof __RELEASE_SHA__ === 'undefined' ? null : __RELEASE_SHA__ }))
   .route('/profiles', profileRoutes)
   .route('/discover', discoveryRoutes)
   .route('/presence', presenceRoutes)

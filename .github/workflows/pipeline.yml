@@ -1,0 +1,102 @@
+name: Pipeline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# PR checks can be superseded. A running main release is protected; only the newest pending run is retained.
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Local-only placeholders: OAuth itself is configured separately in production.
+      GOOGLE_CLIENT_ID: local-ci-client
+      GOOGLE_CLIENT_SECRET: local-ci-secret
+      PLAYWRIGHT_CHANNEL: chromium
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # pnpm 11 requires Node >=22.13; select Node before installing pnpm.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck and focused regressions
+        run: |
+          pnpm typecheck
+          node --test scripts/*.test.mjs
+          pnpm --filter @ks/api exec node --import tsx scripts/check-phase2.ts
+      - name: Build production Edge Function
+        run: pnpm --filter @ks/api exec node --import tsx scripts/build-edge.ts
+      - name: Start disposable Supabase and apply every migration
+        run: pnpm exec supabase start
+      - name: Install browser
+        run: pnpm exec playwright-core install --with-deps chromium
+      - name: Verify real Auth, venues and Edge Runtime; build production frontend
+        run: node scripts/ci/verify-local.mjs
+      - name: Validate Workers static deployment
+        run: pnpm exec wrangler deploy --dry-run --outdir /tmp/ks-worker-dry-run
+      - name: Stop disposable services
+        if: always()
+        run: pnpm exec supabase stop --no-backup
+
+  deploy:
+    name: Deploy production
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # pnpm 11 requires Node >=22.13; select Node before installing pnpm.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Install production smoke-test browser
+        run: pnpm exec playwright-core install --with-deps chromium
+      - name: Build and release database, API, then frontend
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          CLOUDFLARE_WORKER_NAME: ${{ vars.CLOUDFLARE_WORKER_NAME }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          SCENE_TZ: America/Chicago
+          CI: 'true'
+          PLAYWRIGHT_CHANNEL: chromium
+        run: pnpm release
+      - name: Save built release artifacts
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-${{ github.sha }}
+          path: |
+            apps/web/dist/
+            supabase/functions/api/index.js
+          if-no-files-found: ignore
+          retention-days: 14

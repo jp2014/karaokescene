@@ -4,10 +4,9 @@
 // Needs the app without the demo (VITE_DEMO=false, on :5174 by default) and a local Supabase stack.
 // Signs up a singer, a KJ and a venue with email codes, checks each lands on its home screen,
 // then signs the singer out and back in as a returning user. Needs Google Chrome.
-import { chromium } from 'playwright-core';
-import { apiAs, checker, phone, run, signIn } from './lib.mjs';
+import { apiAs, checker, launchBrowser, phone, run, signIn } from './lib.mjs';
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launchBrowser();
 const { check, fail, done } = checker();
 try {
   for (const [role, home] of [['singer', '/'], ['KJ', '/kj'], ['venue', '/hq']]) {

@@ -1,3 +1,4 @@
+import { chromium } from 'playwright-core';
 // Helpers for the real-mode end-to-end checks (app built without the demo + local Supabase).
 export const web = process.env.WEB_URL ?? 'http://localhost:5174';
 export const mailpit = process.env.MAILPIT_URL ?? 'http://127.0.0.1:55424';
@@ -62,3 +63,6 @@ export function checker() {
 /** A phone-sized context with GPS at downtown Omaha. */
 export const phone = (browser, at = { latitude: 41.2565, longitude: -95.9345 }) =>
   browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, geolocation: at, permissions: ['geolocation'] });
+
+// Local developers use Chrome; CI installs Playwright's matching Chromium build.
+export const launchBrowser = () => chromium.launch(process.env.PLAYWRIGHT_CHANNEL === 'chromium' ? {} : { channel: 'chrome' });

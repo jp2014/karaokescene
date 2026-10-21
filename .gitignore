@@ -14,3 +14,7 @@ supabase/.branches
 
 # TanStack Router generated cache
 apps/web/.tanstack/
+
+# Local dependency cache and disposable CI verification stack
+.pnpm-store/
+.ci-local/
